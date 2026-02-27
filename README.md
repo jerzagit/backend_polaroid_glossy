@@ -76,69 +76,87 @@ polaroid-backend/
 ### Prerequisites
 - Java 17+
 - Maven 3.9+
-- PostgreSQL 15+ (Supabase)
+- Docker (for PostgreSQL)
+- Node.js 18+ (for frontend)
 
-### Setup
+### Quick Start
 
-1. **Clone the repository**
+#### 1. Start PostgreSQL (Using Docker)
 ```bash
-git clone <repository-url>
-cd polaroid-backend
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=polaroid --name polaroid-postgres postgres:15
 ```
 
-2. **Choose your environment and configure**
-
-**Development (default):**
+#### 2. Configure Environment
+Edit `.env.dev` file with your database credentials:
 ```bash
-# Copy the example env file
-cp .env.example .env.dev
-# Edit .env.dev with your values
+# Database (Local PostgreSQL)
+DATABASE_URL=jdbc:postgresql://localhost:5432/polaroid
+DB_USERNAME=postgres
+DB_PASSWORD=password
 
-# Run with dev profile
-mvn spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=dev
+# JWT
+JWT_SECRET=dev-secret-key-minimum-32-characters-long-for-development
 ```
 
-**UAT:**
+#### 3. Run Backend
 ```bash
-# Copy the example env file
-cp .env.example .env.uat
-# Edit .env.uat with your values
-
-# Run with uat profile
-mvn spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=uat
-```
-
-**Production:**
-```bash
-# Copy the example env file
-cp .env.example .env.prod
-# Edit .env.prod with your production values
-
-# Run with prod profile
-mvn spring-boot:run -Dspring-boot.run.arguments=--spring.profiles.active=prod
-```
-
-Or set environment variables directly:
-```bash
-export DATABASE_URL="jdbc:postgresql://your-supabase-url.supabase.co:5432/postgres"
-export DB_USERNAME="postgres"
-export DB_PASSWORD="your-db-password"
-export JWT_SECRET="your-super-secret-jwt-key-min-32-characters-long"
-export SUPABASE_URL="https://your-project.supabase.co"
-export SUPABASE_KEY="your-anon-key"
-export TOYYIBPAY_SECRET_KEY="your-secret-key"
-export TOYYIBPAY_CATEGORY_CODE="your-category"
-export TOYYIBPAY_RETURN_URL="http://localhost:3000/payment-status"
-export TOYYIBPAY_CALLBACK_URL="http://localhost:8080/api/webhooks/toyyibpay"
-export CORS_ORIGINS="http://localhost:3000"
-```
-
-3. **Run the application**
-```bash
-mvn spring-boot:run
+# Using Maven (dev profile — Flyway disabled, Hibernate manages schema)
+./apache-maven-3.9.6/bin/mvn.cmd spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=dev"
 ```
 
 The API will be available at `http://localhost:8080`
+
+#### 4. Create Admin User
+Call the setup API to create an admin:
+```
+POST http://localhost:8080/api/auth/setup-admin?secret=admin-secret-2024
+
+Body:
+{
+  "email": "admin@polaroid.com",
+  "password": "admin123",
+  "name": "Admin User",
+  "phone": "+60123456789"
+}
+```
+
+#### 5. Login
+```
+POST http://localhost:8080/api/auth/login
+
+Body:
+{
+  "email": "admin@polaroid.com",
+  "password": "admin123"
+}
+```
+
+### Running with Docker
+
+```bash
+# Start PostgreSQL
+docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=polaroid --name polaroid-postgres postgres:15
+
+# Run backend
+mvn spring-boot:run
+```
+
+### Alternative: H2 Database (Testing Only)
+If you don't want to use Docker/PostgreSQL, you can use H2 in-memory database:
+
+Edit `application-dev.yml`:
+```yaml
+datasource:
+  url: jdbc:h2:mem:polaroiddb
+  driver-class-name: org.h2.Driver
+  username: sa
+  password: 
+
+flyway:
+  enabled: false
+```
+
+Note: H2 data is lost on restart.
 
 ---
 

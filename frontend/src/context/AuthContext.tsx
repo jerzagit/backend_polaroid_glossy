@@ -23,16 +23,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
     if (storedToken && storedUser) {
-      setToken(storedToken);
-      setUser(JSON.parse(storedUser));
+      try {
+        setToken(storedToken);
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+      }
     }
     setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string) => {
     const response = await authAPI.login(email, password);
-    const { token: newToken, user: newUser } = response.data;
+    const { token: newToken } = response.data;
     localStorage.setItem('token', newToken);
+    // fetch full user profile now that token is stored
+    const meResponse = await authAPI.me();
+    const newUser = meResponse.data;
     localStorage.setItem('user', JSON.stringify(newUser));
     setToken(newToken);
     setUser(newUser);

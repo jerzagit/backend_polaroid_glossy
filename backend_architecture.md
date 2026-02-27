@@ -20,8 +20,8 @@
 
 **Project Name:** Polaroid Glossy Backend  
 **Purpose:** REST API backend for e-commerce platform specializing in polaroid photo printing  
-**Port:** 8080 (default Spring Boot)  
-**Frontend:** Next.js 16 running on port 3000
+**Port:** 8080 (default Spring Boot)
+**Frontend:** Next.js 14 running on port 3000+ (auto-assigned; 3004 in dev if lower ports are occupied)
 
 ---
 
@@ -503,19 +503,20 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(STATELESS))
             .authorizeHttpRequests(auth -> auth
                 // Public endpoints
-                .requestMatchers("/api/auth/login", "/api/auth/register").permitAll()
-                .requestMatchers("/api/orders/*/track").permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/setup-admin").permitAll()
+                .requestMatchers("/api/orders/{orderNumber}").permitAll()
                 .requestMatchers("/api/webhooks/**").permitAll()
                 .requestMatchers("/api/auth/google").permitAll()
-                .requestMatchers("/api/upload").permitAll()
+                .requestMatchers("/api/files/upload").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
-                
+                .requestMatchers("/error").permitAll()
+
                 // Admin endpoints
                 .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "MARKETING", "PACKER")
-                
+
                 // Super Admin endpoints
                 .requestMatchers("/api/admin/system/**").hasRole("ADMIN")
-                
+
                 // Authenticated endpoints
                 .anyRequest().authenticated()
             )
@@ -860,62 +861,62 @@ CORS_ORIGINS=http://localhost:3000
 
 ## 12. Implementation Phases
 
-### Phase 1: Project Setup (Week 1)
-- [ ] Create Spring Boot project with Maven
-- [ ] Configure pom.xml with dependencies
-- [ ] Set up application.yml configuration
-- [ ] Configure CORS for Next.js frontend
-- [ ] Set up PostgreSQL connection (Supabase)
-- [ ] Create base project structure
+### Phase 1: Project Setup ✅
+- [x] Create Spring Boot project with Maven
+- [x] Configure pom.xml with dependencies
+- [x] Set up application.yml configuration
+- [x] Configure CORS for Next.js frontend
+- [x] Set up PostgreSQL connection (local Docker / Supabase)
+- [x] Create base project structure
 
-### Phase 2: Authentication (Week 1-2)
-- [ ] Implement User entity and repository
-- [ ] Configure Spring Security
-- [ ] Implement JWT token provider
-- [ ] Create login/register endpoints
-- [ ] Add role-based access control
-- [ ] Test authentication flow
+### Phase 2: Authentication ✅
+- [x] Implement User entity and repository
+- [x] Configure Spring Security
+- [x] Implement JWT token provider
+- [x] Create login/register endpoints
+- [x] Add role-based access control
+- [x] Test authentication flow
 
-### Phase 3: Database Models (Week 2)
-- [ ] Create Order, OrderItem, StatusHistory entities
-- [ ] Set up JPA repositories
-- [ ] Create print sizes reference data
-- [ ] Add database indexes for performance
+### Phase 3: Database Models ✅
+- [x] Create Order, OrderItem, StatusHistory entities
+- [x] Set up JPA repositories
+- [x] Create print sizes reference data
+- [x] Add database indexes for performance
 
-### Phase 4: Order Management (Week 2-3)
-- [ ] Create order endpoints (public)
-- [ ] Implement order creation with items
-- [ ] Add order tracking endpoint
-- [ ] Implement ToyyibPay bill creation
-- [ ] Implement webhook callback handler
-- [ ] Add order status updates
+### Phase 4: Order Management ✅
+- [x] Create order endpoints (public)
+- [x] Implement order creation with items
+- [x] Add order tracking endpoint
+- [x] Implement ToyyibPay bill creation
+- [x] Implement webhook callback handler
+- [x] Add order status updates
 
-### Phase 5: Admin Features (Week 3)
-- [ ] Create admin endpoints
-- [ ] Implement order filtering/pagination
-- [ ] Build stats/analytics endpoints
-- [ ] Add status update with validation
-- [ ] Add tracking number management
+### Phase 5: Admin Features ✅
+- [x] Create admin endpoints
+- [x] Implement order filtering/pagination
+- [x] Build stats/analytics endpoints
+- [x] Add status update with validation
+- [x] Add tracking number management
 
-### Phase 6: File Storage (Week 3-4)
-- [ ] Integrate Supabase Storage
-- [ ] Implement image upload
-- [ ] Create ZIP download for orders
-- [ ] Add image deletion
+### Phase 6: File Storage ✅
+- [x] Integrate Supabase Storage
+- [x] Implement image upload
+- [x] Create ZIP download for orders
+- [x] Add image deletion
 
-### Phase 7: Super Admin System Features (Week 4)
-- [ ] Storage usage endpoint
-- [ ] Database health endpoint
-- [ ] Payment cost tracking
-- [ ] Server metrics endpoint
+### Phase 7: Super Admin System Features ✅
+- [x] Storage usage endpoint
+- [x] Database health endpoint
+- [x] Payment cost tracking
+- [x] Server metrics endpoint
 
-### Phase 8: Frontend Integration (Week 4)
-- [ ] Update Next.js to call Spring Boot
-- [ ] Update environment variables
-- [ ] Test end-to-end flow
-- [ ] Fix any integration issues
+### Phase 8: Frontend Integration ✅
+- [x] Next.js frontend calling Spring Boot backend
+- [x] Environment variables configured (NEXT_PUBLIC_API_URL)
+- [x] End-to-end login/auth flow working
+- [x] AuthContext fixed to fetch user profile via /auth/me after login
 
-### Phase 9: Testing & Deployment (Week 5)
+### Phase 9: Testing & Deployment
 - [ ] Write unit tests
 - [ ] Write integration tests
 - [ ] Deploy to production

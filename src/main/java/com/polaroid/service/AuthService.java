@@ -131,4 +131,35 @@ public class AuthService {
     private String generateAffiliateCode() {
         return "PG" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }
+    
+    @Transactional
+    public AuthResponse registerAsAdmin(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.getEmail())) {
+            throw new BadRequestException("Email already registered");
+        }
+        
+        User user = User.builder()
+                .email(request.getEmail())
+                .passwordHash(passwordEncoder.encode(request.getPassword()))
+                .name(request.getName())
+                .phone(request.getPhone())
+                .role(Role.ADMIN)
+                .affiliateCode(generateAffiliateCode())
+                .isActive(true)
+                .build();
+        
+        User savedUser = userRepository.save(user);
+        
+        String token = tokenProvider.generateToken(savedUser.getEmail(), savedUser.getRole().name());
+        String refreshToken = tokenProvider.generateRefreshToken(savedUser.getEmail());
+        
+        return AuthResponse.builder()
+                .token(token)
+                .refreshToken(refreshToken)
+                .email(user.getEmail())
+                .name(user.getName())
+                .role(user.getRole().name())
+                .expiresIn(tokenProvider.getExpirationTime())
+                .build();
+    }
 }
