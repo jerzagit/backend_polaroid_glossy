@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Polaroid Glossy Admin</title>
+    <link rel="stylesheet" href="/webjars/materialize/1.0.0/css/materialize.min.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+        .login-card { max-width: 400px; width: 100%; padding: 2rem; border-radius: 16px; }
+        .brand-logo { font-size: 2rem; font-weight: bold; color: #667eea; text-align: center; display: block; margin-bottom: 2rem; }
+        .btn-login { width: 100%; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="card login-card white">
+        <div class="brand-logo">
+            <i class="material-icons">photo_camera</i>
+            Polaroid Glossy
+        </div>
+        
+        <div th:if="${param.error}" class="card-panel red lighten-4 red-text text-darken-4">
+            Invalid email or password
+        </div>
+        
+        <div th:if="${param.logout}" class="card-panel green lighten-4 green-text text-darken-4">
+            You have been logged out
+        </div>
+        
+        <form th:action="@{/admin/login}" method="post">
+            <div class="input-field">
+                <i class="material-icons prefix">email</i>
+                <input type="email" id="email" name="email" class="validate" required>
+                <label for="email">Email</label>
+            </div>
+            
+            <div class="input-field">
+                <i class="material-icons prefix">lock</i>
+                <input type="password" id="password" name="password" class="validate" required>
+                <label for="password">Password</label>
+            </div>
+            
+            <button type="submit" class="btn btn-login waves-effect waves-light indigo darken-2">
+                Login <i class="material-icons right">send</i>
+            </button>
+        </form>
+    </div>
+    
+    <script src="/webjars/jquery/3.7.1/jquery.min.js"></script>
+    <script src="/webjars/materialize/1.0.0/js/materialize.min.js"></script>
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" 
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security6" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Order Details - Polaroid Glossy Admin</title>
+    <link rel="stylesheet" href="/webjars/materialize/1.0.0/css/materialize.min.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        body { display: flex; min-height: 100vh; }
+        .sidebar { width: 250px; background: #1a1a2e; position: fixed; height: 100%; z-index: 1000; }
+        .sidebar .brand-logo { padding: 20px; color: #fff; font-size: 1.2rem; font-weight: bold; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 10px; }
+        .sidebar .user-info { padding: 20px; border-bottom: 1px solid #333; color: #fff; }
+        .sidebar ul li a { color: #ccc; padding: 12px 20px; display: block; }
+        .sidebar ul li a:hover, .sidebar ul li a.active { background: #667eea; color: #fff; }
+        .main-content { margin-left: 250px; flex: 1; padding: 20px; background: #f5f5f5; min-height: 100vh; }
+        .page-title { font-size: 1.8rem; font-weight: bold; margin-bottom: 20px; color: #333; }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
+        .status-PENDING { background: #fff3e0; color: #f57c00; }
+        .status-PROCESSING { background: #e3f2fd; color: #1976d2; }
+        .status-POSTED { background: #f3e5f5; color: #7b1fa2; }
+        .status-ON_DELIVERY { background: #e8f5e9; color: #388e3c; }
+        .status-DELIVERED { background: #e0f2f1; color: #00796b; }
+        .status-CANCELLED { background: #ffebee; color: #c62828; }
+        .payment-PENDING { background: #fff3e0; color: #f57c00; }
+        .payment-PAID { background: #e8f5e9; color: #388e3c; }
+        .payment-FAILED { background: #ffebee; color: #c62828; }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="brand-logo">
+            <i class="material-icons">photo_camera</i>
+            Polaroid Glossy
+        </div>
+        <div class="user-info" th:if="${user != null}">
+            <div class="name" th:text="${user.name}">Admin</div>
+            <div class="role" th:text="${user.role}">ADMIN</div>
+        </div>
+        <ul>
+            <li><a th:href="@{/admin}"><i class="material-icons">dashboard</i> Dashboard</a></li>
+            <li><a th:href="@{/admin/orders}" class="active"><i class="material-icons">shopping_cart</i> Orders</a></li>
+            <li sec:authorize="hasRole('ADMIN')"><a th:href="@{/admin/users}"><i class="material-icons">people</i> Users</a></li>
+            <li sec:authorize="hasAnyRole('ADMIN', 'MARKETING')"><a th:href="@{/admin/stats}"><i class="material-icons">bar_chart</i> Statistics</a></li>
+            <li sec:authorize="hasRole('ADMIN')"><a th:href="@{/admin/settings}"><i class="material-icons">settings</i> Settings</a></li>
+            <li>
+                <form th:action="@{/logout}" method="post">
+                    <button type="submit" style="background: none; border: none; color: #ccc; padding: 12px 20px; width: 100%; text-align: left; cursor: pointer; display: flex; align-items: center;">
+                        <i class="material-icons" style="margin-right: 10px;">logout</i> Logout
+                    </button>
+                </form>
+            </li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="page-title">
+            Order Details 
+            <a th:href="@{/admin/orders}" class="btn waves-effect waves-light indigo right">Back to Orders</a>
+        </div>
+        
+        <div class="row">
+            <!-- Order Info -->
+            <div class="col s12 l6">
+                <div class="card-panel white">
+                    <h5>Order Information</h5>
+                    <table>
+                        <tr>
+                            <td><strong>Order Number:</strong></td>
+                            <td th:text="${order.orderNumber}">PG12345678</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Status:</strong></td>
+                            <td><span class="status-badge" th:classappend="${'status-' + order.status}" th:text="${order.status}">PENDING</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Payment:</strong></td>
+                            <td><span class="status-badge" th:classappend="${'payment-' + order.paymentStatus}" th:text="${order.paymentStatus}">PENDING</span></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Order Date:</strong></td>
+                            <td th:text="${#temporals.format(order.createdAt, 'dd/MM/yyyy hh:mm a')}">27/02/2025 05:33 PM</td>
+                        </tr>
+                        <tr th:if="${order.paidAt}">
+                            <td><strong>Paid Date:</strong></td>
+                            <td th:text="${#temporals.format(order.paidAt, 'dd/MM/yyyy hh:mm a')}">27/02/2025 05:33 PM</td>
+                        </tr>
+                        <tr th:if="${order.trackingNumber}">
+                            <td><strong>Tracking:</strong></td>
+                            <td th:text="${order.trackingNumber}">TRACK123</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+            
+            <!-- Customer Info -->
+            <div class="col s12 l6">
+                <div class="card-panel white">
+                    <h5>Customer Information</h5>
+                    <table>
+                        <tr>
+                            <td><strong>Name:</strong></td>
+                            <td th:text="${order.customerName}">John Doe</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Email:</strong></td>
+                            <td th:text="${order.customerEmail}">john@email.com</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Phone:</strong></td>
+                            <td th:text="${order.customerPhone}">+60123456789</td>
+                        </tr>
+                        <tr>
+                            <td><strong>State:</strong></td>
+                            <td th:text="${order.customerState}">W</td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Order Items -->
+        <div class="row">
+            <div class="col s12">
+                <div class="card-panel white">
+                    <h5>Order Items</h5>
+                    <table class="striped">
+                        <thead>
+                            <tr>
+                                <th>Size</th>
+                                <th>Quantity</th>
+                                <th>Unit Price</th>
+                                <th>Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="item : ${order.items}">
+                                <td th:text="${item.sizeName}">4R (4 x 6 inches)</td>
+                                <td th:text="${item.quantity}">10</td>
+                                <td th:text="'RM ' + ${#numbers.formatDecimal(item.unitPrice, 1, 2)}">RM 1.00</td>
+                                <td th:text="'RM ' + ${#numbers.formatDecimal(item.totalPrice, 1, 2)}">RM 10.00</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="3"><strong>Subtotal</strong></td>
+                                <td th:text="'RM ' + ${#numbers.formatDecimal(order.subtotal, 1, 2)}">RM 10.00</td>
+                            </tr>
+                            <tr>
+                                <td colspan="3"><strong>Shipping</strong></td>
+                                <td th:text="'RM ' + ${#numbers.formatDecimal(order.shipping, 1, 2)}">RM 0.00</td>
+                            </tr>
+                            <tr>
+                                <td colspan="3"><strong>Total</strong></td>
+                                <td><strong th:text="'RM ' + ${#numbers.formatDecimal(order.total, 1, 2)}">RM 10.00</strong></td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Update Status Form -->
+        <div class="row" sec:authorize="hasAnyRole('ADMIN', 'MARKETING', 'PACKER')">
+            <div class="col s12">
+                <div class="card-panel white">
+                    <h5>Update Order Status</h5>
+                    <form th:action="@{/api/admin/orders/{id}/status(id=${order.id})}" method="post">
+                        <div class="row">
+                            <div class="col s12 m4">
+                                <label>New Status</label>
+                                <select name="status" class="browser-default">
+                                    <option value="PROCESSING">Processing</option>
+                                    <option value="POSTED">Posted</option>
+                                    <option value="ON_DELIVERY">On Delivery</option>
+                                    <option value="DELIVERED">Delivered</option>
+                                    <option value="CANCELLED">Cancelled</option>
+                                </select>
+                            </div>
+                            <div class="col s12 m6">
+                                <label>Message (Optional)</label>
+                                <input type="text" name="message" placeholder="Status update message">
+                            </div>
+                            <div class="col s12 m2">
+                                <button type="submit" class="btn waves-effect waves-light indigo" style="margin-top: 10px;">Update</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/webjars/jquery/3.7.1/jquery.min.js"></script>
+    <script src="/webjars/materialize/1.0.0/js/materialize.min.js"></script>
+</body>
+</html>

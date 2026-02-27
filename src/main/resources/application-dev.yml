@@ -1,0 +1,59 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: polaroid-backend
+  
+  datasource:
+    url: jdbc:h2:mem:polaroiddb
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: 
+    
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+        format_sql: true
+  
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+  flyway:
+    enabled: false
+
+cors:
+  allowed-origins: http://localhost:3000
+
+jwt:
+  secret: dev-secret-key-minimum-32-characters-long-for-development
+  expiration: 86400000
+  refresh-expiration: 604800000
+
+supabase:
+  url: https://your-project.supabase.co
+  key: your-anon-key
+  storage-bucket: polaroid-glossy
+
+toyyibpay:
+  secret-key: your-secret-key
+  category-code: sandbox
+  return-url: http://localhost:3000/payment-status
+  callback-url: http://localhost:8080/api/webhooks/toyyibpay
+  fee-percentage: 2.5
+
+logging:
+  level:
+    com.polaroid: DEBUG
+    org.springframework.security: DEBUG

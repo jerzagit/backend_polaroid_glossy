@@ -1,0 +1,53 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: polaroid-backend
+  profiles:
+    active: dev
+  
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/polaroid}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:password}
+    driver-class-name: org.postgresql.Driver
+  
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 10MB
+
+jwt:
+  secret: ${JWT_SECRET:your-256-bit-secret-key-minimum-32-characters-long}
+  expiration: 86400000
+  refresh-expiration: 604800000
+
+supabase:
+  url: ${SUPABASE_URL:https://your-project.supabase.co}
+  key: ${SUPABASE_KEY:your-anon-key}
+  storage-bucket: polaroid-glossy
+
+toyyibpay:
+  secret-key: ${TOYYIBPAY_SECRET_KEY:your-secret-key}
+  category-code: ${TOYYIBPAY_CATEGORY_CODE:your-category}
+  return-url: ${TOYYIBPAY_RETURN_URL:http://localhost:3000/payment-status}
+  callback-url: ${TOYYIBPAY_CALLBACK_URL:http://localhost:8080/api/webhooks/toyyibpay}
+  fee-percentage: 2.5
+
+cors:
+  allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
+
+logging:
+  level:
+    com.polaroid: DEBUG
+    org.springframework.security: DEBUG

@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" 
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security6" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Polaroid Glossy Admin</title>
+    <link rel="stylesheet" href="/webjars/materialize/1.0.0/css/materialize.min.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        body { display: flex; min-height: 100vh; }
+        .sidebar { width: 250px; background: #1a1a2e; position: fixed; height: 100%; z-index: 1000; }
+        .sidebar .brand-logo { padding: 20px; color: #fff; font-size: 1.2rem; font-weight: bold; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 10px; }
+        .sidebar .user-info { padding: 20px; border-bottom: 1px solid #333; color: #fff; }
+        .sidebar ul li a { color: #ccc; padding: 12px 20px; display: block; transition: all 0.3s; }
+        .sidebar ul li a:hover, .sidebar ul li a.active { background: #667eea; color: #fff; }
+        .sidebar ul li a i { margin-right: 10px; }
+        .main-content { margin-left: 250px; flex: 1; padding: 20px; background: #f5f5f5; min-height: 100vh; }
+        .page-title { font-size: 1.8rem; font-weight: bold; margin-bottom: 20px; color: #333; }
+        .stat-card { border-radius: 12px; padding: 20px; color: #fff; transition: transform 0.3s; }
+        .stat-card:hover { transform: translateY(-5px); }
+        .stat-card.total { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .stat-card.pending { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .stat-card.processing { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .stat-card.delivered { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        .stat-number { font-size: 2.5rem; font-weight: bold; }
+        .stat-label { font-size: 0.9rem; opacity: 0.9; }
+        .card-panel { border-radius: 12px; }
+        .quick-actions a { margin-right: 10px; }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="brand-logo">
+            <i class="material-icons">photo_camera</i>
+            Polaroid Glossy
+        </div>
+        <div class="user-info" th:if="${user != null}">
+            <div class="name" th:text="${user.name}">Admin</div>
+            <div class="role" th:text="${user.role}">ADMIN</div>
+        </div>
+        <ul>
+            <li><a th:href="@{/admin}" class="active"><i class="material-icons">dashboard</i> Dashboard</a></li>
+            <li><a th:href="@{/admin/orders}"><i class="material-icons">shopping_cart</i> Orders</a></li>
+            <li sec:authorize="hasRole('ADMIN')"><a th:href="@{/admin/users}"><i class="material-icons">people</i> Users</a></li>
+            <li sec:authorize="hasAnyRole('ADMIN', 'MARKETING')"><a th:href="@{/admin/stats}"><i class="material-icons">bar_chart</i> Statistics</a></li>
+            <li sec:authorize="hasRole('ADMIN')"><a th:href="@{/admin/settings}"><i class="material-icons">settings</i> Settings</a></li>
+            <li>
+                <form th:action="@{/logout}" method="post">
+                    <button type="submit" style="background: none; border: none; color: #ccc; padding: 12px 20px; width: 100%; text-align: left; cursor: pointer; display: flex; align-items: center;">
+                        <i class="material-icons" style="margin-right: 10px;">logout</i> Logout
+                    </button>
+                </form>
+            </li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="page-title">Dashboard</div>
+        
+        <!-- Stats Cards -->
+        <div class="row">
+            <div class="col s12 m6 l3">
+                <div class="stat-card total">
+                    <div class="stat-number" th:text="${stats.totalOrders}">0</div>
+                    <div class="stat-label">Total Orders</div>
+                </div>
+            </div>
+            <div class="col s12 m6 l3">
+                <div class="stat-card pending">
+                    <div class="stat-number" th:text="${stats.pendingOrders}">0</div>
+                    <div class="stat-label">Pending Orders</div>
+                </div>
+            </div>
+            <div class="col s12 m6 l3">
+                <div class="stat-card processing">
+                    <div class="stat-number" th:text="${stats.processingOrders}">0</div>
+                    <div class="stat-label">Processing</div>
+                </div>
+            </div>
+            <div class="col s12 m6 l3">
+                <div class="stat-card delivered">
+                    <div class="stat-number" th:text="${stats.deliveredOrders}">0</div>
+                    <div class="stat-label">Delivered</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Revenue & Quick Actions -->
+        <div class="row">
+            <div class="col s12 l6">
+                <div class="card-panel white">
+                    <h5>Revenue (Last 30 Days)</h5>
+                    <div class="stat-number" style="color: #43e97b;" th:text="'RM ' + ${#numbers.formatDecimal(stats.totalRevenue, 1, 2)}">RM 0.00</div>
+                </div>
+            </div>
+            <div class="col s12 l6">
+                <div class="card-panel white">
+                    <h5>Quick Actions</h5>
+                    <div class="quick-actions">
+                        <a th:href="@{/admin/orders}" class="btn waves-effect waves-light indigo">View Orders</a>
+                        <a sec:authorize="hasRole('ADMIN')" th:href="@{/admin/users}" class="btn waves-effect waves-light teal">Manage Users</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Orders by Status -->
+        <div class="row">
+            <div class="col s12">
+                <div class="card-panel white">
+                    <h5>Orders by Status</h5>
+                    <table class="highlight">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr th:each="entry : ${statusCounts}">
+                                <td><span class="status-badge" th:classappend="${'status-' + entry.key}" th:text="${entry.key}">PENDING</span></td>
+                                <td th:text="${entry.value}">0</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/webjars/jquery/3.7.1/jquery.min.js"></script>
+    <script src="/webjars/materialize/1.0.0/js/materialize.min.js"></script>
+</body>
+</html>

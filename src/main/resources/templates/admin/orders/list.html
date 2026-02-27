@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" 
+      xmlns:sec="http://www.thymeleaf.org/extras/spring-security6" lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orders - Polaroid Glossy Admin</title>
+    <link rel="stylesheet" href="/webjars/materialize/1.0.0/css/materialize.min.css">
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+    <style>
+        body { display: flex; min-height: 100vh; }
+        .sidebar { width: 250px; background: #1a1a2e; position: fixed; height: 100%; z-index: 1000; }
+        .sidebar .brand-logo { padding: 20px; color: #fff; font-size: 1.2rem; font-weight: bold; border-bottom: 1px solid #333; display: flex; align-items: center; gap: 10px; }
+        .sidebar .user-info { padding: 20px; border-bottom: 1px solid #333; color: #fff; }
+        .sidebar ul li a { color: #ccc; padding: 12px 20px; display: block; }
+        .sidebar ul li a:hover, .sidebar ul li a.active { background: #667eea; color: #fff; }
+        .main-content { margin-left: 250px; flex: 1; padding: 20px; background: #f5f5f5; min-height: 100vh; }
+        .page-title { font-size: 1.8rem; font-weight: bold; margin-bottom: 20px; color: #333; }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; display: inline-block; }
+        .status-PENDING { background: #fff3e0; color: #f57c00; }
+        .status-PROCESSING { background: #e3f2fd; color: #1976d2; }
+        .status-POSTED { background: #f3e5f5; color: #7b1fa2; }
+        .status-ON_DELIVERY { background: #e8f5e9; color: #388e3c; }
+        .status-DELIVERED { background: #e0f2f1; color: #00796b; }
+        .status-CANCELLED { background: #ffebee; color: #c62828; }
+        .payment-PENDING { background: #fff3e0; color: #f57c00; }
+        .payment-PAID { background: #e8f5e9; color: #388e3c; }
+        .payment-FAILED { background: #ffebee; color: #c62828; }
+    </style>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="brand-logo">
+            <i class="material-icons">photo_camera</i>
+            Polaroid Glossy
+        </div>
+        <div class="user-info" th:if="${user != null}">
+            <div class="name" th:text="${user.name}">Admin</div>
+            <div class="role" th:text="${user.role}">ADMIN</div>
+        </div>
+        <ul>
+            <li><a th:href="@{/admin}"><i class="material-icons">dashboard</i> Dashboard</a></li>
+            <li><a th:href="@{/admin/orders}" class="active"><i class="material-icons">shopping_cart</i> Orders</a></li>
+            <li sec:authorize="hasRole('ADMIN')"><a th:href="@{/admin/users}"><i class="material-icons">people</i> Users</a></li>
+            <li sec:authorize="hasAnyRole('ADMIN', 'MARKETING')"><a th:href="@{/admin/stats}"><i class="material-icons">bar_chart</i> Statistics</a></li>
+            <li sec:authorize="hasRole('ADMIN')"><a th:href="@{/admin/settings}"><i class="material-icons">settings</i> Settings</a></li>
+            <li>
+                <form th:action="@{/logout}" method="post">
+                    <button type="submit" style="background: none; border: none; color: #ccc; padding: 12px 20px; width: 100%; text-align: left; cursor: pointer; display: flex; align-items: center;">
+                        <i class="material-icons" style="margin-right: 10px;">logout</i> Logout
+                    </button>
+                </form>
+            </li>
+        </ul>
+    </div>
+
+    <div class="main-content">
+        <div class="page-title">Orders</div>
+        
+        <!-- Filters -->
+        <div class="card-panel white">
+            <form th:action="@{/admin/orders}" method="get" class="row">
+                <div class="col s12 m3">
+                    <label>Status</label>
+                    <select name="status" class="browser-default">
+                        <option value="">All Status</option>
+                        <option value="PENDING" th:selected="${status == 'PENDING'}">Pending</option>
+                        <option value="PROCESSING" th:selected="${status == 'PROCESSING'}">Processing</option>
+                        <option value="POSTED" th:selected="${status == 'POSTED'}">Posted</option>
+                        <option value="ON_DELIVERY" th:selected="${status == 'ON_DELIVERY'}">On Delivery</option>
+                        <option value="DELIVERED" th:selected="${status == 'DELIVERED'}">Delivered</option>
+                        <option value="CANCELLED" th:selected="${status == 'CANCELLED'}">Cancelled</option>
+                    </select>
+                </div>
+                <div class="col s12 m3">
+                    <label>Payment Status</label>
+                    <select name="paymentStatus" class="browser-default">
+                        <option value="">All Payments</option>
+                        <option value="PENDING" th:selected="${paymentStatus == 'PENDING'}">Pending</option>
+                        <option value="PAID" th:selected="${paymentStatus == 'PAID'}">Paid</option>
+                        <option value="FAILED" th:selected="${paymentStatus == 'FAILED'}">Failed</option>
+                    </select>
+                </div>
+                <div class="col s12 m4">
+                    <label>Search Order Number</label>
+                    <input type="text" name="search" th:value="${search}" placeholder="Enter order number">
+                </div>
+                <div class="col s12 m2">
+                    <button type="submit" class="btn waves-effect waves-light indigo" style="margin-top: 10px;">Filter</button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- Orders Table -->
+        <div class="card-panel white">
+            <table class="striped responsive-table">
+                <thead>
+                    <tr>
+                        <th>Order Number</th>
+                        <th>Customer</th>
+                        <th>Total</th>
+                        <th>Status</th>
+                        <th>Payment</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr th:each="order : ${orders}">
+                        <td><strong th:text="${order.orderNumber}">PG12345678</strong></td>
+                        <td>
+                            <div th:text="${order.customerName}">John Doe</div>
+                            <small th:text="${order.customerEmail}">john@email.com</small>
+                        </td>
+                        <td th:text="'RM ' + ${#numbers.formatDecimal(order.total, 1, 2)}">RM 10.00</td>
+                        <td><span class="status-badge" th:classappend="${'status-' + order.status}" th:text="${order.status}">PENDING</span></td>
+                        <td><span class="status-badge" th:classappend="${'payment-' + order.paymentStatus}" th:text="${order.paymentStatus}">PENDING</span></td>
+                        <td th:text="${#temporals.format(order.createdAt, 'dd/MM/yyyy hh:mm a')}">27/02/2025 05:33 PM</td>
+                        <td>
+                            <a th:href="@{/admin/orders/{id}(id=${order.id})}" class="btn-floating btn-small waves-effect waves-light indigo">
+                                <i class="material-icons">visibility</i>
+                            </a>
+                        </td>
+                    </tr>
+                    <tr th:if="${#lists.isEmpty(orders)}">
+                        <td colspan="7" class="center-align">No orders found</td>
+                    </tr>
+                </tbody>
+            </table>
+            
+            <!-- Pagination -->
+            <ul class="pagination center-align" th:if="${totalPages > 1}">
+                <li th:classappend="${currentPage == 0} ? 'disabled'">
+                    <a th:href="@{/admin/orders(page=${currentPage - 1}, status=${status}, paymentStatus=${paymentStatus}, search=${search})}">
+                        <i class="material-icons">chevron_left</i>
+                    </a>
+                </li>
+                <li th:each="i : ${#numbers.sequence(0, totalPages - 1)}" th:classappend="${i == currentPage} ? 'active'">
+                    <a th:href="@{/admin/orders(page=${i}, status=${status}, paymentStatus=${paymentStatus}, search=${search})}" th:text="${i + 1}">1</a>
+                </li>
+                <li th:classappend="${currentPage == totalPages - 1} ? 'disabled'">
+                    <a th:href="@{/admin/orders(page=${currentPage + 1}, status=${status}, paymentStatus=${paymentStatus}, search=${search})}">
+                        <i class="material-icons">chevron_right</i>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="/webjars/jquery/3.7.1/jquery.min.js"></script>
+    <script src="/webjars/materialize/1.0.0/js/materialize.min.js"></script>
+</body>
+</html>
