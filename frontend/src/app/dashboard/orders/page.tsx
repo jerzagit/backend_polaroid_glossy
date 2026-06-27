@@ -163,6 +163,7 @@ export default function OrdersPage() {
 
   const canUpdateStatus = user?.role === 'ADMIN' || user?.role === 'MARKETING' || user?.role === 'PACKER';
   const canViewImages = user?.role === 'ADMIN';
+  const hasSelectedOrder = Boolean(selectedOrder);
 
   const paginatedFiles = files.slice(filePage * ITEMS_PER_PAGE, (filePage + 1) * ITEMS_PER_PAGE);
   const fileTotalPages = Math.ceil(files.length / ITEMS_PER_PAGE);
@@ -182,14 +183,14 @@ export default function OrdersPage() {
         showAdminSearch={user?.role === 'ADMIN'}
       />
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2">
+      <div className={`grid grid-cols-1 gap-6 items-start ${hasSelectedOrder ? 'xl:grid-cols-[minmax(380px,0.78fr)_minmax(620px,1.22fr)]' : ''}`}>
+        <div className="min-w-0">
           {loading ? (
             <div className="glyph-scan p-8">
               <span className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">LOADING_</span>
             </div>
           ) : (
-            <div className="border border-border" style={{borderRadius: 0, background: 'var(--color-surface)'}}>
+            <div className="border border-border overflow-hidden" style={{borderRadius: 0, background: 'var(--color-surface)'}}>
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
@@ -197,8 +198,8 @@ export default function OrdersPage() {
                     <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Customer</th>
                     <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Total</th>
                     <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Status</th>
-                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Payment</th>
-                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Date</th>
+                    <th className={`font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal ${hasSelectedOrder ? 'hidden 2xl:table-cell' : ''}`}>Payment</th>
+                    <th className={`font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal ${hasSelectedOrder ? 'hidden 2xl:table-cell' : ''}`}>Date</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -210,9 +211,16 @@ export default function OrdersPage() {
                         selectedOrder?.id === order.id ? 'bg-surface-2 border-l-2 border-l-accent' : ''
                       }`}
                     >
-                      <td className="px-4 py-3 font-mono text-sm text-text-primary">{order.orderNumber}</td>
-                      <td className="px-4 py-3 font-mono text-sm text-text-primary">{order.customerName}</td>
-                      <td className="px-4 py-3 font-mono text-sm text-text-primary">RM {order.total.toFixed(2)}</td>
+                      <td className="px-4 py-3 font-mono text-sm text-text-primary whitespace-nowrap">{order.orderNumber}</td>
+                      <td className="px-4 py-3 font-mono text-sm text-text-primary">
+                        <span className="block truncate max-w-[180px]">{order.customerName}</span>
+                        {hasSelectedOrder && (
+                          <span className="block 2xl:hidden mt-1 text-xs text-text-muted truncate max-w-[180px]">
+                            {order.paymentStatus} | {new Date(order.createdAt).toLocaleDateString()}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 font-mono text-sm text-text-primary whitespace-nowrap">RM {order.total.toFixed(2)}</td>
                       <td className="px-4 py-3">
                         <span className={`font-mono text-xs uppercase tracking-[0.1em] border px-2 py-0.5 ${
                           statusColors[order.status] || 'border-border text-text-muted'
@@ -220,12 +228,12 @@ export default function OrdersPage() {
                           {order.status}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs uppercase tracking-[0.1em]">
+                      <td className={`px-4 py-3 font-mono text-xs uppercase tracking-[0.1em] ${hasSelectedOrder ? 'hidden 2xl:table-cell' : ''}`}>
                         <span className={order.paymentStatus === 'FAILED' ? 'text-accent' : order.paymentStatus === 'PAID' ? 'text-text-primary' : 'text-text-muted glyph-pulse'}>
                           {order.paymentStatus}
                         </span>
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-text-muted">
+                      <td className={`px-4 py-3 font-mono text-xs text-text-muted whitespace-nowrap ${hasSelectedOrder ? 'hidden 2xl:table-cell' : ''}`}>
                         {new Date(order.createdAt).toLocaleDateString()}
                       </td>
                     </tr>
@@ -258,53 +266,71 @@ export default function OrdersPage() {
           </div>
         </div>
 
-        <div className="border border-border" style={{borderRadius: 0, background: 'var(--color-surface)'}}>
+        <div className={`border border-border min-w-0 ${hasSelectedOrder ? 'xl:sticky xl:top-0' : ''}`} style={{borderRadius: 0, background: 'var(--color-surface)'}}>
           {selectedOrder ? (
             <div>
-              <div className="flex border-b border-border">
-                <button
-                  onClick={() => setActiveTab('details')}
-                  className={`flex-1 font-mono text-xs uppercase tracking-[0.15em] px-4 py-3 transition-colors duration-150 ${
-                    activeTab === 'details'
-                      ? 'text-accent border-b border-accent'
-                      : 'text-text-muted hover:text-text-primary'
-                  }`}
-                >
-                  {'[i]'} Details
-                </button>
-                {canViewImages && (
+              <div className="border-b border-border">
+                <div className="flex items-start justify-between gap-4 px-5 py-4">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">Selected Order</p>
+                    <h2 className="mt-1 font-display text-lg text-text-primary truncate">{selectedOrder.orderNumber}</h2>
+                  </div>
                   <button
-                    onClick={() => setActiveTab('images')}
+                    onClick={() => {
+                      setSelectedOrder(null);
+                      setFiles([]);
+                    }}
+                    className="h-9 w-9 shrink-0 border border-border font-mono text-xs text-text-muted hover:text-danger hover:border-danger transition-all duration-150"
+                    style={{borderRadius: 0, background: 'transparent'}}
+                    title="Close details"
+                  >
+                    [x]
+                  </button>
+                </div>
+                <div className="flex">
+                  <button
+                    onClick={() => setActiveTab('details')}
                     className={`flex-1 font-mono text-xs uppercase tracking-[0.15em] px-4 py-3 transition-colors duration-150 ${
-                      activeTab === 'images'
+                      activeTab === 'details'
                         ? 'text-accent border-b border-accent'
                         : 'text-text-muted hover:text-text-primary'
                     }`}
                   >
-                    {'[~]'} Files ({files.length})
+                    {'[i]'} Details
                   </button>
-                )}
+                  {canViewImages && (
+                    <button
+                      onClick={() => setActiveTab('images')}
+                      className={`flex-1 font-mono text-xs uppercase tracking-[0.15em] px-4 py-3 transition-colors duration-150 ${
+                        activeTab === 'images'
+                          ? 'text-accent border-b border-accent'
+                          : 'text-text-muted hover:text-text-primary'
+                      }`}
+                    >
+                      {'[~]'} Files ({files.length})
+                    </button>
+                  )}
+                </div>
               </div>
 
               {activeTab === 'details' && (
-                <div className="p-6 space-y-5">
-                  <div>
-                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Order</p>
-                    <p className="font-mono text-sm text-text-primary">{selectedOrder.orderNumber}</p>
+                <div className="p-5 md:p-6 space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    <div>
+                      <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Customer</p>
+                      <p className="font-mono text-sm text-text-primary">{selectedOrder.customerName}</p>
+                      <p className="font-mono text-xs text-text-muted break-all">{selectedOrder.customerEmail}</p>
+                      {selectedOrder.customerPhone && (
+                        <p className="font-mono text-xs text-text-muted">{selectedOrder.customerPhone}</p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Payment</p>
+                      <p className="font-mono text-sm text-text-primary">RM {selectedOrder.total.toFixed(2)}</p>
+                      <p className="font-mono text-xs text-text-muted uppercase tracking-[0.1em]">{selectedOrder.paymentStatus}</p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Customer</p>
-                    <p className="font-mono text-sm text-text-primary">{selectedOrder.customerName}</p>
-                    <p className="font-mono text-xs text-text-muted">{selectedOrder.customerEmail}</p>
-                    {selectedOrder.customerPhone && (
-                      <p className="font-mono text-xs text-text-muted">{selectedOrder.customerPhone}</p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">State</p>
-                    <p className="font-mono text-sm text-text-primary">{selectedOrder.customerState.toUpperCase()}</p>
-                  </div>
-                  <div>
+                  <div className="border-t border-border pt-5">
                     <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Delivery Address</p>
                     <div className="font-mono text-sm text-text-primary space-y-1">
                       {selectedOrder.customerHouseUnitNo && <p>{selectedOrder.customerHouseUnitNo}</p>}
@@ -318,34 +344,32 @@ export default function OrdersPage() {
                       <p>{selectedOrder.customerCountry || 'Malaysia'}</p>
                     </div>
                   </div>
-                  <div>
-                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Total</p>
-                    <p className="font-mono text-sm text-text-primary">RM {selectedOrder.total.toFixed(2)}</p>
-                  </div>
-                  <div>
-                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Tracking</p>
-                    <input
-                      type="text"
-                      defaultValue={selectedOrder.trackingNumber || ''}
-                      onBlur={(e) => handleTrackingUpdate(selectedOrder.id, e.target.value)}
-                      placeholder="TRACKING NUMBER"
-                      className="w-full font-mono text-sm bg-transparent border-b border-border text-text-primary placeholder:text-text-muted pb-1 focus:outline-none focus:border-text-primary transition-colors duration-150"
-                      style={{borderRadius: 0}}
-                    />
-                  </div>
-                  <div>
-                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Status</p>
-                    <select
-                      value={selectedOrder.status}
-                      onChange={(e) => handleStatusUpdate(selectedOrder.id, e.target.value)}
-                      disabled={!canUpdateStatus || updating}
-                      className="w-full font-mono text-sm bg-transparent border border-border text-text-primary px-3 py-2 focus:outline-none focus:border-text-primary transition-colors duration-150 disabled:opacity-50"
-                      style={{borderRadius: 0}}
-                    >
-                      {ORDER_STATUSES.map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+                    <div>
+                      <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Tracking</p>
+                      <input
+                        type="text"
+                        defaultValue={selectedOrder.trackingNumber || ''}
+                        onBlur={(e) => handleTrackingUpdate(selectedOrder.id, e.target.value)}
+                        placeholder="TRACKING NUMBER"
+                        className="w-full font-mono text-sm bg-transparent border-b border-border text-text-primary placeholder:text-text-muted pb-1 focus:outline-none focus:border-text-primary transition-colors duration-150"
+                        style={{borderRadius: 0}}
+                      />
+                    </div>
+                    <div>
+                      <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Status</p>
+                      <select
+                        value={selectedOrder.status}
+                        onChange={(e) => handleStatusUpdate(selectedOrder.id, e.target.value)}
+                        disabled={!canUpdateStatus || updating}
+                        className="w-full font-mono text-sm bg-transparent border border-border text-text-primary px-3 py-2 focus:outline-none focus:border-text-primary transition-colors duration-150 disabled:opacity-50"
+                        style={{borderRadius: 0}}
+                      >
+                        {ORDER_STATUSES.map((s) => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
                   <div>
                     <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Notes</p>
@@ -373,7 +397,7 @@ export default function OrdersPage() {
               )}
 
               {canViewImages && activeTab === 'images' && (
-                <div className="p-4">
+                <div className="p-5 md:p-6">
                   {filesLoading ? (
                     <div className="glyph-scan p-8 text-center">
                       <span className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">LOADING_</span>
@@ -393,13 +417,13 @@ export default function OrdersPage() {
                         {downloading === 'all' ? 'DOWNLOADING...' : `[~] Download ZIP (${files.length})`}
                       </button>
 
-                      <div className="grid grid-cols-2 gap-3">
+                      <div className="grid grid-cols-2 2xl:grid-cols-3 gap-4">
                         {paginatedFiles.map((file) => (
                           <div key={file.key} className="relative group border border-border" style={{borderRadius: 0}}>
                             <img
                               src={file.url}
                               alt={file.name}
-                              className="w-full h-28 object-cover"
+                              className="w-full h-36 md:h-44 object-cover"
                               loading="lazy"
                             />
                             <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-60 transition-all duration-150 flex items-center justify-center">
