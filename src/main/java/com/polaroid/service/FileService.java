@@ -50,10 +50,10 @@ public class FileService {
     @Value("${supabase.signed-url-expiration:3600}")
     private int signedUrlExpiration;
 
-    private static final List<String> ALLOWED_CONTENT_TYPES = List.of(
-        MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE
-    );
+    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024L;
+    private static final long MAX_DECODED_MEMORY = 100 * 1024 * 1024L;
     private static final int MAX_IMAGE_DIMENSION = 10000;
+    private static final Set<String> ALLOWED_FORMATS = Set.of("jpeg", "png");
 
     public Map<String, String> uploadFile(MultipartFile file, String orderId, String userEmail) throws IOException {
         Order order = findAuthorizedOrder(orderId, userEmail);
@@ -237,7 +237,8 @@ public class FileService {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("File is required");
         }
-        if (file.getSize() > 10 * 1024 * 1024) {
+
+        if (file.getSize() > MAX_FILE_SIZE) {
             throw new BadRequestException("File exceeds 10MB limit");
         }
 
@@ -249,30 +250,41 @@ public class FileService {
         }
 
         String detectedFormat = detectImageFormat(fileBytes);
-        if (detectedFormat == null) {
-            throw new BadRequestException("Invalid image file: unrecognized format (magic bytes mismatch)");
+        if (detectedFormat == null || !ALLOWED_FORMATS.contains(detectedFormat)) {
+            throw new BadRequestException(
+                "Invalid image file: only JPEG and PNG are allowed (magic bytes mismatch)");
         }
 
-        String contentType = file.getContentType();
-        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
-            throw new BadRequestException("Only JPEG and PNG images are allowed");
-        }
-
+        BufferedImage image;
         try {
-            BufferedImage image = ImageIO.read(new ByteArrayInputStream(fileBytes));
-            if (image == null) {
-                throw new BadRequestException("Invalid image file: could not decode");
-            }
-            if (image.getWidth() > MAX_IMAGE_DIMENSION || image.getHeight() > MAX_IMAGE_DIMENSION) {
-                throw new BadRequestException(String.format(
-                    "Image dimensions (%dx%d) exceed maximum allowed (%dx%d)",
-                    image.getWidth(), image.getHeight(), MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION));
-            }
+            image = ImageIO.read(new ByteArrayInputStream(fileBytes));
+        } catch (IOException e) {
+            throw new BadRequestException("Failed to decode image: " + e.getMessage());
+        }
 
-            ByteArrayOutputStream baos = new ByteArrayOutputStream();
-            String formatName = "jpeg".equals(detectedFormat) ? "jpg" : detectedFormat;
+        if (image == null) {
+            throw new BadRequestException("Invalid image file: could not decode");
+        }
 
-            ImageWriter writer = ImageIO.getImageWritersByFormatName(formatName).next();
+        long decodedMemory = (long) image.getWidth() * image.getHeight() * 4L;
+        if (decodedMemory > MAX_DECODED_MEMORY) {
+            throw new BadRequestException(String.format(
+                "Image decompression size (%dMB) exceeds allowed limit (100MB)",
+                decodedMemory / (1024 * 1024)));
+        }
+
+        if (image.getWidth() > MAX_IMAGE_DIMENSION || image.getHeight() > MAX_IMAGE_DIMENSION) {
+            throw new BadRequestException(String.format(
+                "Image dimensions (%dx%d) exceed maximum allowed (%dx%d)",
+                image.getWidth(), image.getHeight(),
+                MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION));
+        }
+
+        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+        String formatName = "jpeg".equals(detectedFormat) ? "jpg" : detectedFormat;
+
+        ImageWriter writer = ImageIO.getImageWritersByFormatName(formatName).next();
+        try {
             ImageWriteParam param = writer.getDefaultWriteParam();
             if (param.canWriteCompressed()) {
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
@@ -282,27 +294,35 @@ public class FileService {
                 writer.setOutput(ios);
                 writer.write(null, new IIOImage(image, null, null), param);
             }
-            writer.dispose();
-
-            return baos.toByteArray();
         } catch (IOException e) {
-            throw new BadRequestException("Failed to process image: " + e.getMessage());
+            throw new BadRequestException("Failed to re-encode image: " + e.getMessage());
+        } finally {
+            writer.dispose();
         }
+
+        return baos.toByteArray();
     }
 
     private String detectImageFormat(byte[] fileBytes) {
-        if (fileBytes.length < 12) return null;
+        if (fileBytes == null || fileBytes.length < 12) return null;
 
-        if ((fileBytes[0] & 0xFF) == 0xFF && (fileBytes[1] & 0xFF) == 0xD8 && (fileBytes[2] & 0xFF) == 0xFF) {
+        if ((fileBytes[0] & 0xFF) == 0xFF
+                && (fileBytes[1] & 0xFF) == 0xD8
+                && (fileBytes[2] & 0xFF) == 0xFF) {
             return "jpeg";
         }
-        if ((fileBytes[0] & 0xFF) == 0x89 && fileBytes[1] == 0x50 && fileBytes[2] == 0x4E && fileBytes[3] == 0x47) {
+
+        if ((fileBytes[0] & 0xFF) == 0x89
+                && fileBytes[1] == 0x50
+                && fileBytes[2] == 0x4E
+                && fileBytes[3] == 0x47
+                && fileBytes[4] == 0x0D
+                && fileBytes[5] == 0x0A
+                && fileBytes[6] == 0x1A
+                && fileBytes[7] == 0x0A) {
             return "png";
         }
-        if (fileBytes[0] == 0x52 && fileBytes[1] == 0x49 && fileBytes[2] == 0x46 && fileBytes[3] == 0x46
-            && fileBytes[8] == 0x57 && fileBytes[9] == 0x45 && fileBytes[10] == 0x42 && fileBytes[11] == 0x50) {
-            return "webp";
-        }
+
         return null;
     }
 
