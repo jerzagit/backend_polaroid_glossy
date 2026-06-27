@@ -17,6 +17,8 @@ import java.security.MessageDigest;
 import java.math.BigDecimal;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -41,6 +43,7 @@ public class PaymentService {
     private boolean verifyCallback;
     
     private static final String TOYYIBPAY_API_URL = "https://toyyibpay.com/index.php/api/createBill";
+    private static final Pattern BILL_CODE_PATTERN = Pattern.compile("\"?BillCode\"?\\s*:\\s*\"?([^\"}\\],\\s]+)");
     
     private final OrderService orderService;
 
@@ -97,12 +100,9 @@ public class PaymentService {
             response = response.substring(0, response.length() - 1);
         }
         
-        if (response.contains("BillCode")) {
-            int start = response.indexOf("BillCode") + 10;
-            int end = response.indexOf("\"", start);
-            if (end > start) {
-                return response.substring(start, end);
-            }
+        Matcher billCodeMatcher = BILL_CODE_PATTERN.matcher(response);
+        if (billCodeMatcher.find()) {
+            return billCodeMatcher.group(1).trim();
         }
         
         return response.replace("\"", "").trim();
