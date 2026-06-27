@@ -18,6 +18,7 @@ const statusColors: Record<OrderStatus, string> = {
 };
 
 const ITEMS_PER_PAGE = 12;
+const ORDERS_PER_PAGE = 20;
 
 const ORDER_STATUSES: string[] = ['PENDING', 'PROCESSING', 'POSTED', 'ON_DELIVERY', 'DELIVERED', 'CANCELLED', 'REFUNDED'];
 
@@ -40,7 +41,7 @@ export default function OrdersPage() {
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const response = await orderAPI.getAll(page, 20, buildFilterParams(appliedFilters));
+      const response = await orderAPI.getAll(page, ORDERS_PER_PAGE, buildFilterParams(appliedFilters));
       const data = response.data as PaginatedResponse<Order>;
       setOrders(data.content);
       setTotalPages(data.totalPages);
@@ -194,6 +195,7 @@ export default function OrdersPage() {
               <table className="w-full">
                 <thead>
                   <tr className="border-b border-border">
+                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">No#</th>
                     <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Order #</th>
                     <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Customer</th>
                     <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Total</th>
@@ -203,7 +205,7 @@ export default function OrdersPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {orders.map((order) => (
+                  {orders.map((order, index) => (
                     <tr
                       key={order.id}
                       onClick={() => handleSelectOrder(order)}
@@ -211,6 +213,9 @@ export default function OrdersPage() {
                         selectedOrder?.id === order.id ? 'bg-surface-2 border-l-2 border-l-accent' : ''
                       }`}
                     >
+                      <td className="px-4 py-3 font-mono text-xs text-text-muted whitespace-nowrap">
+                        {page * ORDERS_PER_PAGE + index + 1}
+                      </td>
                       <td className="px-4 py-3 font-mono text-sm text-text-primary whitespace-nowrap">{order.orderNumber}</td>
                       <td className="px-4 py-3 font-mono text-sm text-text-primary">
                         <span className="block truncate max-w-[180px]">{order.customerName}</span>
