@@ -2,6 +2,8 @@
 
 This project uses Fly.io for the Spring Boot backend. The customer frontend and seller dashboard can point to this backend API once deployed.
 
+For the full release workflow, see `docs/production-workflow.md`.
+
 ## Current Fly App
 
 - App: `polaroid-glossy-backend`
