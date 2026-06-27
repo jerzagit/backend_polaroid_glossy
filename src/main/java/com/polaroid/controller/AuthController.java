@@ -7,7 +7,9 @@ import com.polaroid.dto.response.UserResponse;
 import com.polaroid.model.enums.Role;
 import com.polaroid.service.AuthService;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Value;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -18,6 +20,12 @@ import org.springframework.web.bind.annotation.*;
 public class AuthController {
     
     private final AuthService authService;
+
+    @Value("${app.setup-admin.enabled:false}")
+    private boolean setupAdminEnabled;
+
+    @Value("${app.setup-admin.secret:}")
+    private String setupAdminSecret;
     
     @PostMapping("/register")
     public ResponseEntity<AuthResponse> register(@Valid @RequestBody RegisterRequest request) {
@@ -26,7 +34,10 @@ public class AuthController {
     
     @PostMapping("/setup-admin")
     public ResponseEntity<AuthResponse> setupAdmin(@RequestParam String secret, @RequestBody RegisterRequest request) {
-        if (!"admin-secret-2024".equals(secret)) {
+        if (!setupAdminEnabled) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+        if (setupAdminSecret == null || setupAdminSecret.isBlank() || !setupAdminSecret.equals(secret)) {
             return ResponseEntity.status(401).build();
         }
         return ResponseEntity.ok(authService.registerAsAdmin(request));

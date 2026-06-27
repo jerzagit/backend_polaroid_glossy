@@ -218,7 +218,7 @@ cors:
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
 | POST | `/api/orders` | Create new order | Auth |
-| GET | `/api/orders/{orderNumber}` | Get order by number | Public |
+| GET | `/api/orders/{orderNumber}?email=customer@example.com` | Get order by number | Email verified or auth |
 | GET | `/api/orders/my` | Get my orders | Auth |
 | POST | `/api/orders/{orderNumber}/pay` | Initiate payment | Auth |
 

@@ -6,6 +6,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -23,26 +24,30 @@ public class FileController {
     @PostMapping("/upload")
     public ResponseEntity<Map<String, String>> uploadFile(
             @RequestParam("file") MultipartFile file,
-            @RequestParam("orderId") String orderId) throws IOException {
+            @RequestParam("orderId") String orderId,
+            Authentication authentication) throws IOException {
         
-        return ResponseEntity.ok(fileService.uploadFile(file, orderId));
+        return ResponseEntity.ok(fileService.uploadFile(file, orderId, authentication.getName()));
     }
     
-    @DeleteMapping("/{key}")
-    public ResponseEntity<Void> deleteFile(@PathVariable String key) throws IOException {
+    @DeleteMapping
+    @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING', 'PACKER')")
+    public ResponseEntity<Void> deleteFile(@RequestParam String key) throws IOException {
         fileService.deleteFile(key);
         return ResponseEntity.noContent().build();
     }
     
     @GetMapping("/order/{orderId}")
-    public ResponseEntity<List<Map<String, String>>> listOrderFiles(@PathVariable String orderId) {
-        return ResponseEntity.ok(fileService.listFiles(orderId));
+    public ResponseEntity<List<Map<String, String>>> listOrderFiles(
+            @PathVariable String orderId,
+            Authentication authentication) {
+        return ResponseEntity.ok(fileService.listFiles(orderId, authentication.getName()));
     }
     
     @GetMapping("/order/{orderId}/download")
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING', 'PACKER')")
     public ResponseEntity<byte[]> downloadOrderFiles(@PathVariable String orderId) throws IOException {
-        List<Map<String, String>> files = fileService.listFiles(orderId);
+        List<Map<String, String>> files = fileService.listFilesForStaff(orderId);
         
         if (files.isEmpty()) {
             return ResponseEntity.notFound().build();

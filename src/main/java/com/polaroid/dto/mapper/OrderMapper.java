@@ -88,6 +88,7 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .totalPrice(item.getTotalPrice())
                 .images(item.getImages())
                 .customTexts(item.getCustomTexts())
+                .s3Keys(item.getS3Keys())
                 .build();
     }
     
