@@ -34,6 +34,7 @@ supabase:
   url: ${SUPABASE_URL}
   key: ${SUPABASE_KEY}
   storage-bucket: polaroid-glossy
+  signed-url-expiration: ${SUPABASE_SIGNED_URL_EXPIRATION:3600}
 
 toyyibpay:
   secret-key: ${TOYYIBPAY_SECRET_KEY}
@@ -41,6 +42,12 @@ toyyibpay:
   return-url: ${TOYYIBPAY_RETURN_URL}
   callback-url: ${TOYYIBPAY_CALLBACK_URL}
   fee-percentage: 2.5
+  verify-callback: ${TOYYIBPAY_VERIFY_CALLBACK:true}
+
+app:
+  setup-admin:
+    enabled: ${SETUP_ADMIN_ENABLED:false}
+    secret: ${SETUP_ADMIN_SECRET:}
 
 cors:
   allowed-origins: ${CORS_ORIGINS}

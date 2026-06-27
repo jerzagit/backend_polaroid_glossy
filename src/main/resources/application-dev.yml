@@ -6,10 +6,10 @@ spring:
     name: polaroid-backend
   
   datasource:
-    url: jdbc:postgresql://localhost:5432/polaroid
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/polaroid}
     driver-class-name: org.postgresql.Driver
-    username: postgres
-    password: password
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:password}
     
   h2:
     console:
@@ -44,6 +44,7 @@ supabase:
   url: https://your-project.supabase.co
   key: your-anon-key
   storage-bucket: polaroid-glossy
+  signed-url-expiration: 3600
 
 toyyibpay:
   secret-key: your-secret-key
@@ -51,6 +52,12 @@ toyyibpay:
   return-url: http://localhost:3000/payment-status
   callback-url: http://localhost:8080/api/webhooks/toyyibpay
   fee-percentage: 2.5
+  verify-callback: false
+
+app:
+  setup-admin:
+    enabled: true
+    secret: admin-secret-2024
 
 logging:
   level:

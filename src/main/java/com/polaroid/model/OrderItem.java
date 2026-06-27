@@ -42,9 +42,9 @@ public class OrderItem extends Auditable {
     @Column(columnDefinition = "TEXT")
     private String images;
     
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "custom_texts", columnDefinition = "TEXT")
     private String customTexts;
     
-    @Column(columnDefinition = "TEXT")
+    @Column(name = "s3_keys", columnDefinition = "TEXT")
     private String s3Keys;
 }

@@ -3,10 +3,12 @@ package com.polaroid.service;
 import com.polaroid.dto.request.OrderRequest;
 import com.polaroid.dto.response.OrderResponse;
 import com.polaroid.exception.BadRequestException;
+import com.polaroid.exception.ForbiddenException;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.*;
 import com.polaroid.model.enums.OrderStatus;
 import com.polaroid.model.enums.PaymentStatus;
+import com.polaroid.model.enums.Role;
 import com.polaroid.repository.OrderRepository;
 import com.polaroid.repository.OrderItemRepository;
 import com.polaroid.repository.OrderStatusHistoryRepository;
@@ -65,6 +67,7 @@ public class OrderService {
                     .unitPrice(printSize.getPrice())
                     .totalPrice(itemTotal)
                     .images(formatJsonArray(itemReq.getImageUrls()))
+                    .s3Keys(formatJsonArray(itemReq.getImageUrls()))
                     .customTexts(formatJsonArray(itemReq.getCustomTexts()))
                     .build();
             
@@ -100,6 +103,25 @@ public class OrderService {
         Order order = orderRepository.findByOrderNumber(orderNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         return orderMapper.toDto(order);
+    }
+
+    public OrderResponse getOrderByNumber(String orderNumber, String requesterEmail, String verificationEmail) {
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+
+        if (requesterEmail != null) {
+            User user = userRepository.findByEmail(requesterEmail)
+                    .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+            if (isStaff(user.getRole()) || (order.getUserId() != null && order.getUserId().equals(user.getId()))) {
+                return orderMapper.toDto(order);
+            }
+        }
+
+        if (verificationEmail != null && verificationEmail.equalsIgnoreCase(order.getCustomerEmail())) {
+            return orderMapper.toDto(order);
+        }
+
+        throw new ForbiddenException("Order email verification is required");
     }
     
     public Page<OrderResponse> getUserOrders(String userEmail, Pageable pageable) {
@@ -207,5 +229,22 @@ public class OrderService {
             return "[]";
         }
         return "[\"" + String.join("\",\"", list) + "\"]";
+    }
+
+    public Order getAuthorizedOrder(String orderNumber, String requesterEmail) {
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderNumber));
+        User user = userRepository.findByEmail(requesterEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (isStaff(user.getRole()) || (order.getUserId() != null && order.getUserId().equals(user.getId()))) {
+            return order;
+        }
+
+        throw new ForbiddenException("Not authorized to access this order");
+    }
+
+    private boolean isStaff(Role role) {
+        return role == Role.ADMIN || role == Role.MARKETING || role == Role.PACKER;
     }
 }

@@ -3,17 +3,24 @@ package com.polaroid.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
-import org.springframework.util.LinkedMultiValueMap;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.*;
 import java.util.*;
+import java.util.UUID;
+
+import com.polaroid.exception.BadRequestException;
+import com.polaroid.exception.ForbiddenException;
+import com.polaroid.exception.ResourceNotFoundException;
+import com.polaroid.model.Order;
+import com.polaroid.model.User;
+import com.polaroid.model.enums.Role;
+import com.polaroid.repository.OrderRepository;
+import com.polaroid.repository.UserRepository;
 
 @Service
 @RequiredArgsConstructor
@@ -22,6 +29,8 @@ public class FileService {
     
     private final WebClient supabaseWebClient;
     private final RestTemplate restTemplate;
+    private final OrderRepository orderRepository;
+    private final UserRepository userRepository;
     
     @Value("${supabase.url:https://placeholder.supabase.co}")
     private String supabaseUrl;
@@ -32,9 +41,15 @@ public class FileService {
     @Value("${supabase.storage-bucket:polaroid-glossy}")
     private String bucketName;
     
-    public Map<String, String> uploadFile(MultipartFile file, String orderId) throws IOException {
+    @Value("${supabase.signed-url-expiration:3600}")
+    private int signedUrlExpiration;
+    
+    public Map<String, String> uploadFile(MultipartFile file, String orderId, String userEmail) throws IOException {
+        Order order = findAuthorizedOrder(orderId, userEmail);
+        validateImage(file);
+
         String fileName = UUID.randomUUID().toString() + ".jpg";
-        String folder = "original/" + orderId;
+        String folder = "orders/" + order.getId() + "/original";
         String key = folder + "/" + fileName;
         
         try {
@@ -49,11 +64,11 @@ public class FileService {
             
             restTemplate.exchange(uploadUrl, HttpMethod.PUT, requestEntity, String.class);
             
-            String publicUrl = getPublicUrl(key);
+            String signedUrl = createSignedUrl(key);
             
             Map<String, String> result = new HashMap<>();
             result.put("key", key);
-            result.put("url", publicUrl);
+            result.put("url", signedUrl);
             result.put("fileName", fileName);
             
             return result;
@@ -106,8 +121,18 @@ public class FileService {
         return outputStream.toByteArray();
     }
     
-    public List<Map<String, String>> listFiles(String orderId) {
-        String folder = "original/" + orderId;
+    public List<Map<String, String>> listFiles(String orderId, String userEmail) {
+        Order order = findAuthorizedOrder(orderId, userEmail);
+        return listFilesForOrder(order);
+    }
+
+    public List<Map<String, String>> listFilesForStaff(String orderId) {
+        Order order = findOrder(orderId);
+        return listFilesForOrder(order);
+    }
+
+    private List<Map<String, String>> listFilesForOrder(Order order) {
+        String folder = "orders/" + order.getId() + "/original";
         List<Map<String, String>> files = new ArrayList<>();
         
         try {
@@ -131,7 +156,7 @@ public class FileService {
                     Map<String, String> fileInfo = new HashMap<>();
                     fileInfo.put("name", (String) item.get("name"));
                     fileInfo.put("key", folder + "/" + item.get("name"));
-                    fileInfo.put("url", getPublicUrl(folder + "/" + item.get("name")));
+                    fileInfo.put("url", createSignedUrl(folder + "/" + item.get("name")));
                     files.add(fileInfo);
                 }
             }
@@ -142,8 +167,34 @@ public class FileService {
         return files;
     }
     
-    public String getPublicUrl(String key) {
-        return String.format("%s/storage/v1/object/public/%s/%s", supabaseUrl, bucketName, key);
+    public String createSignedUrl(String key) {
+        try {
+            String signUrl = String.format("%s/storage/v1/object/sign/%s/%s", supabaseUrl, bucketName, key);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.set("Authorization", "Bearer " + supabaseKey);
+
+            Map<String, Object> body = Map.of("expiresIn", signedUrlExpiration);
+            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> response = restTemplate.postForObject(signUrl, requestEntity, Map.class);
+            if (response == null) {
+                throw new IllegalStateException("Empty signed URL response");
+            }
+
+            Object signedUrl = response.getOrDefault("signedURL", response.get("signedUrl"));
+            if (signedUrl == null) {
+                throw new IllegalStateException("Missing signed URL in response");
+            }
+
+            String url = signedUrl.toString();
+            return url.startsWith("http") ? url : supabaseUrl + url;
+        } catch (Exception e) {
+            log.error("Failed to create signed URL for {}: {}", key, e.getMessage());
+            throw new IllegalStateException("Failed to create signed URL");
+        }
     }
     
     public long getStorageUsage() {
@@ -166,5 +217,44 @@ public class FileService {
             log.warn("Failed to get storage usage: {}", e.getMessage());
         }
         return 0;
+    }
+
+    private void validateImage(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("File is required");
+        }
+        if (file.getSize() > 10 * 1024 * 1024) {
+            throw new BadRequestException("File exceeds 10MB limit");
+        }
+        String contentType = file.getContentType();
+        if (contentType == null || !List.of(MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE).contains(contentType)) {
+            throw new BadRequestException("Only JPEG and PNG images are allowed");
+        }
+    }
+
+    private Order findAuthorizedOrder(String orderId, String userEmail) {
+        Order order = findOrder(orderId);
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (isStaff(user.getRole()) || (order.getUserId() != null && order.getUserId().equals(user.getId()))) {
+            return order;
+        }
+
+        throw new ForbiddenException("Not authorized to access files for this order");
+    }
+
+    private Order findOrder(String orderId) {
+        try {
+            return orderRepository.findById(UUID.fromString(orderId))
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+        } catch (IllegalArgumentException ignored) {
+            return orderRepository.findByOrderNumber(orderId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+        }
+    }
+
+    private boolean isStaff(Role role) {
+        return role == Role.ADMIN || role == Role.MARKETING || role == Role.PACKER;
     }
 }

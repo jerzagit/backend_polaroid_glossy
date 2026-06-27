@@ -33,8 +33,12 @@ public class OrderController {
     }
     
     @GetMapping("/{orderNumber}")
-    public ResponseEntity<OrderResponse> getOrderByNumber(@PathVariable String orderNumber) {
-        return ResponseEntity.ok(orderService.getOrderByNumber(orderNumber));
+    public ResponseEntity<OrderResponse> getOrderByNumber(
+            @PathVariable String orderNumber,
+            @RequestParam(required = false) String email,
+            Authentication authentication) {
+        String userEmail = authentication != null ? authentication.getName() : null;
+        return ResponseEntity.ok(orderService.getOrderByNumber(orderNumber, userEmail, email));
     }
     
     @GetMapping("/my")
@@ -54,7 +58,9 @@ public class OrderController {
     }
     
     @PostMapping("/{orderNumber}/pay")
-    public ResponseEntity<Map<String, String>> initiatePayment(@PathVariable String orderNumber) {
-        return ResponseEntity.ok(paymentService.createPayment(orderNumber));
+    public ResponseEntity<Map<String, String>> initiatePayment(
+            @PathVariable String orderNumber,
+            Authentication authentication) {
+        return ResponseEntity.ok(paymentService.createPayment(orderNumber, authentication.getName()));
     }
 }
