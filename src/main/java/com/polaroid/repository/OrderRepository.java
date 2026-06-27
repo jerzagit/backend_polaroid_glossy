@@ -29,8 +29,8 @@ public interface OrderRepository extends JpaRepository<Order, UUID> {
            "(:status IS NULL OR o.status = :status) AND " +
            "(:paymentStatus IS NULL OR o.paymentStatus = :paymentStatus) AND " +
            "(:customerState IS NULL OR o.customerState = :customerState) AND " +
-           "(:fromDate IS NULL OR o.createdAt >= :fromDate) AND " +
-           "(:toDate IS NULL OR o.createdAt <= :toDate)")
+           "(o.createdAt >= :fromDate) AND " +
+           "(o.createdAt <= :toDate)")
     Page<Order> findWithFilters(
             @Param("status") OrderStatus status,
             @Param("paymentStatus") PaymentStatus paymentStatus,
