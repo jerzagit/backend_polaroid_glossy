@@ -9,9 +9,15 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.awt.image.BufferedImage;
 import java.io.*;
 import java.util.*;
 import java.util.UUID;
+import javax.imageio.IIOImage;
+import javax.imageio.ImageIO;
+import javax.imageio.ImageWriteParam;
+import javax.imageio.ImageWriter;
+import javax.imageio.stream.ImageOutputStream;
 
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
@@ -43,12 +49,20 @@ public class FileService {
     
     @Value("${supabase.signed-url-expiration:3600}")
     private int signedUrlExpiration;
-    
+
+    private static final List<String> ALLOWED_CONTENT_TYPES = List.of(
+        MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE
+    );
+    private static final int MAX_IMAGE_DIMENSION = 10000;
+
     public Map<String, String> uploadFile(MultipartFile file, String orderId, String userEmail) throws IOException {
         Order order = findAuthorizedOrder(orderId, userEmail);
-        validateImage(file);
+        byte[] processedImage = validateAndProcessImage(file);
 
-        String fileName = UUID.randomUUID().toString() + ".jpg";
+        String format = detectImageFormat(processedImage);
+        boolean isJpeg = "jpeg".equals(format);
+        String extension = isJpeg ? "jpg" : "png";
+        String fileName = UUID.randomUUID().toString() + "." + extension;
         String folder = "orders/" + order.getId() + "/original";
         String key = folder + "/" + fileName;
         
@@ -56,11 +70,11 @@ public class FileService {
             String uploadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
             
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.IMAGE_JPEG);
+            headers.setContentType(isJpeg ? MediaType.IMAGE_JPEG : MediaType.IMAGE_PNG);
             headers.set("Authorization", "Bearer " + supabaseKey);
             headers.set("x-upsert", "true");
             
-            HttpEntity<byte[]> requestEntity = new HttpEntity<>(file.getBytes(), headers);
+            HttpEntity<byte[]> requestEntity = new HttpEntity<>(processedImage, headers);
             
             restTemplate.exchange(uploadUrl, HttpMethod.PUT, requestEntity, String.class);
             
@@ -219,17 +233,77 @@ public class FileService {
         return 0;
     }
 
-    private void validateImage(MultipartFile file) {
+    private byte[] validateAndProcessImage(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new BadRequestException("File is required");
         }
         if (file.getSize() > 10 * 1024 * 1024) {
             throw new BadRequestException("File exceeds 10MB limit");
         }
+
+        byte[] fileBytes;
+        try {
+            fileBytes = file.getBytes();
+        } catch (IOException e) {
+            throw new BadRequestException("Failed to read file");
+        }
+
+        String detectedFormat = detectImageFormat(fileBytes);
+        if (detectedFormat == null) {
+            throw new BadRequestException("Invalid image file: unrecognized format (magic bytes mismatch)");
+        }
+
         String contentType = file.getContentType();
-        if (contentType == null || !List.of(MediaType.IMAGE_JPEG_VALUE, MediaType.IMAGE_PNG_VALUE).contains(contentType)) {
+        if (contentType == null || !ALLOWED_CONTENT_TYPES.contains(contentType)) {
             throw new BadRequestException("Only JPEG and PNG images are allowed");
         }
+
+        try {
+            BufferedImage image = ImageIO.read(new ByteArrayInputStream(fileBytes));
+            if (image == null) {
+                throw new BadRequestException("Invalid image file: could not decode");
+            }
+            if (image.getWidth() > MAX_IMAGE_DIMENSION || image.getHeight() > MAX_IMAGE_DIMENSION) {
+                throw new BadRequestException(String.format(
+                    "Image dimensions (%dx%d) exceed maximum allowed (%dx%d)",
+                    image.getWidth(), image.getHeight(), MAX_IMAGE_DIMENSION, MAX_IMAGE_DIMENSION));
+            }
+
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            String formatName = "jpeg".equals(detectedFormat) ? "jpg" : detectedFormat;
+
+            ImageWriter writer = ImageIO.getImageWritersByFormatName(formatName).next();
+            ImageWriteParam param = writer.getDefaultWriteParam();
+            if (param.canWriteCompressed()) {
+                param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
+                param.setCompressionQuality(0.95f);
+            }
+            try (ImageOutputStream ios = ImageIO.createImageOutputStream(baos)) {
+                writer.setOutput(ios);
+                writer.write(null, new IIOImage(image, null, null), param);
+            }
+            writer.dispose();
+
+            return baos.toByteArray();
+        } catch (IOException e) {
+            throw new BadRequestException("Failed to process image: " + e.getMessage());
+        }
+    }
+
+    private String detectImageFormat(byte[] fileBytes) {
+        if (fileBytes.length < 12) return null;
+
+        if ((fileBytes[0] & 0xFF) == 0xFF && (fileBytes[1] & 0xFF) == 0xD8 && (fileBytes[2] & 0xFF) == 0xFF) {
+            return "jpeg";
+        }
+        if ((fileBytes[0] & 0xFF) == 0x89 && fileBytes[1] == 0x50 && fileBytes[2] == 0x4E && fileBytes[3] == 0x47) {
+            return "png";
+        }
+        if (fileBytes[0] == 0x52 && fileBytes[1] == 0x49 && fileBytes[2] == 0x46 && fileBytes[3] == 0x46
+            && fileBytes[8] == 0x57 && fileBytes[9] == 0x45 && fileBytes[10] == 0x42 && fileBytes[11] == 0x50) {
+            return "webp";
+        }
+        return null;
     }
 
     private Order findAuthorizedOrder(String orderId, String userEmail) {
