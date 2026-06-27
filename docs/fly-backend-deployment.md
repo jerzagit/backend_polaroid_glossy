@@ -9,6 +9,7 @@ For the full release workflow, see `docs/production-workflow.md`.
 - App: `polaroid-glossy-backend`
 - Region: `sin`
 - Runtime: Java 17
+- VM: `shared-cpu-1x`, `512 MB`
 - Internal port: `8080`
 - Health check: `/api/health`
 - Public API base after deploy: `https://polaroid-glossy-backend.fly.dev/api`
@@ -76,6 +77,14 @@ flyctl deploy --app polaroid-glossy-backend
 ```
 
 If secrets were staged before the first deployment, Fly applies them during deploy.
+
+Keep the backend machine at 512 MB or higher:
+
+```bash
+flyctl scale memory 512 --app polaroid-glossy-backend
+```
+
+The first production deploy reused an existing Supabase schema. We manually added the V3 checkout address columns and marked Flyway as baselined at version 3 so Flyway does not replay local setup migrations against existing production tables. Future migrations should be added as new `V4__...` files.
 
 ## Verify
 
