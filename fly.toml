@@ -1,0 +1,27 @@
+app = 'polaroid-glossy-backend'
+primary_region = 'sin'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  SERVER_PORT = '8080'
+  SPRING_PROFILES_ACTIVE = 'prod'
+  SUPABASE_SIGNED_URL_EXPIRATION = '3600'
+  TOYYIBPAY_VERIFY_CALLBACK = 'true'
+  SETUP_ADMIN_ENABLED = 'false'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/api/health'

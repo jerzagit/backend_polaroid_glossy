@@ -1,0 +1,120 @@
+# Fly Backend Deployment
+
+This project uses Fly.io for the Spring Boot backend. The customer frontend and seller dashboard can point to this backend API once deployed.
+
+For the full release workflow, see `docs/production-workflow.md`.
+
+## Current Fly App
+
+- App: `polaroid-glossy-backend`
+- Region: `sin`
+- Runtime: Java 17
+- Internal port: `8080`
+- Health check: `/api/health`
+- Public API base after deploy: `https://polaroid-glossy-backend.fly.dev/api`
+
+## Files Added
+
+- `Dockerfile` builds the Spring Boot jar with Maven and runs it on Eclipse Temurin Java 17.
+- `.dockerignore` keeps frontend, local storage, env files, target output, and docs out of the Docker build context.
+- `fly.toml` configures the Fly app, region, port, production Spring profile, and health check.
+- `HealthController` exposes `GET /api/health`.
+
+## Required Secrets
+
+Set secrets in Fly. Do not commit real values into git.
+
+```bash
+flyctl secrets set \
+  DATABASE_URL='jdbc:postgresql://<host>:5432/postgres?sslmode=require' \
+  DB_USERNAME='postgres' \
+  DB_PASSWORD='<password>' \
+  JWT_SECRET='<long-random-secret>' \
+  SUPABASE_URL='https://<project-ref>.supabase.co' \
+  SUPABASE_KEY='<supabase-service-role-key>' \
+  TOYYIBPAY_SECRET_KEY='<toyyibpay-secret>' \
+  TOYYIBPAY_CATEGORY_CODE='<toyyibpay-category>' \
+  TOYYIBPAY_RETURN_URL='https://<frontend-domain>/payment-status' \
+  TOYYIBPAY_CALLBACK_URL='https://polaroid-glossy-backend.fly.dev/api/webhooks/toyyibpay' \
+  CORS_ORIGINS='https://<frontend-domain>,https://<seller-dashboard-domain>' \
+  --app polaroid-glossy-backend
+```
+
+Already staged in Fly during setup:
+
+- `DATABASE_URL`
+- `DB_USERNAME`
+- `DB_PASSWORD`
+- `JWT_SECRET`
+- `SUPABASE_URL`
+- `SUPABASE_KEY`
+- `CORS_ORIGINS`
+
+Still needed before production payment flow is ready:
+
+- `TOYYIBPAY_SECRET_KEY`
+- `TOYYIBPAY_CATEGORY_CODE`
+- `TOYYIBPAY_RETURN_URL`
+- `TOYYIBPAY_CALLBACK_URL`
+
+## Build Check
+
+Run a remote build without deploying:
+
+```bash
+flyctl deploy --remote-only --build-only --app polaroid-glossy-backend
+```
+
+This confirms the Dockerfile can build the Spring Boot jar on Fly builders.
+
+## Deploy
+
+After all secrets are set:
+
+```bash
+flyctl deploy --app polaroid-glossy-backend
+```
+
+If secrets were staged before the first deployment, Fly applies them during deploy.
+
+## Verify
+
+Check health:
+
+```bash
+curl https://polaroid-glossy-backend.fly.dev/api/health
+```
+
+Expected:
+
+```json
+{"status":"ok"}
+```
+
+Check app status:
+
+```bash
+flyctl status --app polaroid-glossy-backend
+```
+
+Check logs:
+
+```bash
+flyctl logs --app polaroid-glossy-backend
+```
+
+## Frontend Env Later
+
+When deploying the customer frontend, set:
+
+```bash
+NEXT_PUBLIC_BACKEND_API_BASE=https://polaroid-glossy-backend.fly.dev/api
+```
+
+When deploying the seller dashboard, set:
+
+```bash
+NEXT_PUBLIC_API_URL=https://polaroid-glossy-backend.fly.dev/api
+```
+
+Also update `CORS_ORIGINS` on Fly to include the real frontend domains.
