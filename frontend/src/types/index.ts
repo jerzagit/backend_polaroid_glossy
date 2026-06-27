@@ -81,3 +81,9 @@ export interface PaginatedResponse<T> {
   size: number;
   number: number;
 }
+
+export interface UploadedFile {
+  name: string;
+  key: string;
+  url: string;
+}

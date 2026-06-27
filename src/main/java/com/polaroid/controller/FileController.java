@@ -25,9 +25,10 @@ public class FileController {
     public ResponseEntity<Map<String, String>> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("orderId") String orderId,
+            @RequestParam(value = "orderItemId", required = false) String orderItemId,
             Authentication authentication) throws IOException {
         
-        return ResponseEntity.ok(fileService.uploadFile(file, orderId, authentication.getName()));
+        return ResponseEntity.ok(fileService.uploadFile(file, orderId, orderItemId, authentication.getName()));
     }
     
     @DeleteMapping
@@ -38,6 +39,7 @@ public class FileController {
     }
     
     @GetMapping("/order/{orderId}")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<List<Map<String, String>>> listOrderFiles(
             @PathVariable String orderId,
             Authentication authentication) {

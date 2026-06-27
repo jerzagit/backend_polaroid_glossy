@@ -2,15 +2,20 @@ package com.polaroid.service;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.*;
 import java.util.UUID;
 import javax.imageio.IIOImage;
@@ -23,8 +28,10 @@ import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.Order;
+import com.polaroid.model.OrderItem;
 import com.polaroid.model.User;
 import com.polaroid.model.enums.Role;
+import com.polaroid.repository.OrderItemRepository;
 import com.polaroid.repository.OrderRepository;
 import com.polaroid.repository.UserRepository;
 
@@ -36,7 +43,9 @@ public class FileService {
     private final WebClient supabaseWebClient;
     private final RestTemplate restTemplate;
     private final OrderRepository orderRepository;
+    private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
+    private final ObjectMapper objectMapper;
     
     @Value("${supabase.url:https://placeholder.supabase.co}")
     private String supabaseUrl;
@@ -50,12 +59,19 @@ public class FileService {
     @Value("${supabase.signed-url-expiration:3600}")
     private int signedUrlExpiration;
 
+    @Value("${app.mock-storage.enabled:false}")
+    private boolean mockStorageEnabled;
+
+    @Value("${app.mock-storage.directory:.dev-storage}")
+    private String mockStorageDirectory;
+
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024L;
     private static final long MAX_DECODED_MEMORY = 100 * 1024 * 1024L;
     private static final int MAX_IMAGE_DIMENSION = 10000;
     private static final Set<String> ALLOWED_FORMATS = Set.of("jpeg", "png");
 
-    public Map<String, String> uploadFile(MultipartFile file, String orderId, String userEmail) throws IOException {
+    @Transactional
+    public Map<String, String> uploadFile(MultipartFile file, String orderId, String orderItemId, String userEmail) throws IOException {
         Order order = findAuthorizedOrder(orderId, userEmail);
         byte[] processedImage = validateAndProcessImage(file);
 
@@ -67,28 +83,108 @@ public class FileService {
         String key = folder + "/" + fileName;
         
         try {
-            String uploadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
-            
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(isJpeg ? MediaType.IMAGE_JPEG : MediaType.IMAGE_PNG);
-            headers.set("Authorization", "Bearer " + supabaseKey);
-            headers.set("x-upsert", "true");
-            
-            HttpEntity<byte[]> requestEntity = new HttpEntity<>(processedImage, headers);
-            
-            restTemplate.exchange(uploadUrl, HttpMethod.PUT, requestEntity, String.class);
-            
-            String signedUrl = createSignedUrl(key);
+            String signedUrl;
+            if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
+                signedUrl = writeMockStorageFile(key, processedImage);
+            } else {
+                String uploadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
+
+                HttpHeaders headers = new HttpHeaders();
+                headers.setContentType(isJpeg ? MediaType.IMAGE_JPEG : MediaType.IMAGE_PNG);
+                headers.set("Authorization", "Bearer " + supabaseKey);
+                headers.set("x-upsert", "true");
+
+                HttpEntity<byte[]> requestEntity = new HttpEntity<>(processedImage, headers);
+
+                restTemplate.exchange(uploadUrl, HttpMethod.PUT, requestEntity, String.class);
+                signedUrl = createSignedUrl(key);
+            }
+
+            persistUploadedFileKey(order, orderItemId, key);
             
             Map<String, String> result = new HashMap<>();
             result.put("key", key);
             result.put("url", signedUrl);
             result.put("fileName", fileName);
+            if (orderItemId != null && !orderItemId.isBlank()) {
+                result.put("orderItemId", orderItemId);
+            }
             
             return result;
         } catch (Exception e) {
             log.error("Failed to upload file: {}", e.getMessage());
             throw new IOException("Failed to upload file: " + e.getMessage());
+        }
+    }
+
+    private boolean isPlaceholderSupabaseConfig() {
+        return supabaseUrl == null
+                || supabaseKey == null
+                || supabaseUrl.contains("your-project")
+                || supabaseUrl.contains("placeholder")
+                || supabaseKey.startsWith("your-")
+                || supabaseKey.contains("placeholder");
+    }
+
+    private String writeMockStorageFile(String key, byte[] data) throws IOException {
+        Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
+        Path file = root.resolve(bucketName).resolve(key).normalize();
+        if (!file.startsWith(root)) {
+            throw new BadRequestException("Invalid storage key");
+        }
+
+        Files.createDirectories(file.getParent());
+        Files.write(file, data);
+        log.info("Mock storage upload saved: {}", file);
+        return file.toUri().toString();
+    }
+
+    private void persistUploadedFileKey(Order order, String orderItemId, String key) {
+        OrderItem item = resolveOrderItem(order, orderItemId);
+        item.setImages(appendJsonString(item.getImages(), key));
+        item.setS3Keys(appendJsonString(item.getS3Keys(), key));
+        orderItemRepository.save(item);
+    }
+
+    private OrderItem resolveOrderItem(Order order, String orderItemId) {
+        if (orderItemId != null && !orderItemId.isBlank()) {
+            UUID itemId;
+            try {
+                itemId = UUID.fromString(orderItemId);
+            } catch (IllegalArgumentException e) {
+                throw new BadRequestException("Invalid order item ID");
+            }
+
+            return orderItemRepository.findByOrderIdAndId(order.getId(), itemId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Order item not found"));
+        }
+
+        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
+        if (items.size() == 1) {
+            return items.get(0);
+        }
+
+        throw new BadRequestException("orderItemId is required when an order has multiple items");
+    }
+
+    private String appendJsonString(String json, String value) {
+        List<String> values;
+        try {
+            if (json == null || json.isBlank()) {
+                values = new ArrayList<>();
+            } else {
+                values = objectMapper.readValue(json, new TypeReference<List<String>>() {});
+            }
+        } catch (Exception e) {
+            values = new ArrayList<>();
+        }
+
+        values.add(value);
+
+        try {
+            return objectMapper.writeValueAsString(values);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to update uploaded file metadata", e);
         }
     }
     
@@ -150,13 +246,14 @@ public class FileService {
         List<Map<String, String>> files = new ArrayList<>();
         
         try {
-            String listUrl = String.format("%s/storage/v1/object/list/%s/%s", supabaseUrl, bucketName, folder);
+            String listUrl = String.format("%s/storage/v1/object/list/%s", supabaseUrl, bucketName);
             
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("Authorization", "Bearer " + supabaseKey);
             
             Map<String, Object> body = new HashMap<>();
+            body.put("prefix", folder);
             body.put("limit", 100);
             body.put("offset", 0);
             
