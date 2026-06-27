@@ -55,6 +55,8 @@ toyyibpay:
   verify-callback: false
 
 app:
+  mock-payments:
+    enabled: true
   setup-admin:
     enabled: true
     secret: admin-secret-2024
