@@ -72,12 +72,17 @@ public class WebController {
         UserResponse user = authService.getCurrentUser(authentication.getName());
         Pageable pageable = PageRequest.of(page, size, Sort.by("createdAt").descending());
         
-        Page<OrderResponse> ordersPage;
-        if (search != null && !search.isEmpty()) {
-            ordersPage = orderService.getOrdersWithFilters(status, paymentStatus, null, null, null, pageable);
-        } else {
-            ordersPage = orderService.getOrdersWithFilters(status, paymentStatus, null, null, null, pageable);
-        }
+        String orderReference = search != null && !search.isBlank() ? search : null;
+        Page<OrderResponse> ordersPage = orderService.getOrdersWithFilters(
+                status,
+                paymentStatus,
+                null,
+                null,
+                null,
+                orderReference,
+                null,
+                null,
+                pageable);
         
         model.addAttribute("user", user);
         model.addAttribute("orders", ordersPage.getContent());

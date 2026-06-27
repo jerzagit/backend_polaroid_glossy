@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { orderAPI, fileAPI } from '@/lib/api';
 import { Order, OrderStatus, PaginatedResponse, UploadedFile } from '@/types';
+import DashboardFilterBar from '@/components/DashboardFilterBar';
+import { DashboardFilters, buildFilterParams, createDefaultDashboardFilters } from '@/lib/dashboardFilters';
 
 const statusColors: Record<OrderStatus, string> = {
   PENDING: 'text-text-muted border-border',
@@ -25,7 +27,8 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
-  const [statusFilter, setStatusFilter] = useState('');
+  const [filters, setFilters] = useState<DashboardFilters>(() => createDefaultDashboardFilters());
+  const [appliedFilters, setAppliedFilters] = useState<DashboardFilters>(() => createDefaultDashboardFilters());
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [updating, setUpdating] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'images'>('details');
@@ -37,10 +40,14 @@ export default function OrdersPage() {
   const fetchOrders = async () => {
     setLoading(true);
     try {
-      const response = await orderAPI.getAll(page, 20, statusFilter || undefined);
+      const response = await orderAPI.getAll(page, 20, buildFilterParams(appliedFilters));
       const data = response.data as PaginatedResponse<Order>;
       setOrders(data.content);
       setTotalPages(data.totalPages);
+      if (selectedOrder && !data.content.some((order) => order.id === selectedOrder.id)) {
+        setSelectedOrder(null);
+        setFiles([]);
+      }
     } catch (error) {
       console.error('Failed to fetch orders', error);
     } finally {
@@ -50,7 +57,17 @@ export default function OrdersPage() {
 
   useEffect(() => {
     fetchOrders();
-  }, [page, statusFilter]);
+  }, [page, appliedFilters]);
+
+  const applyFilters = () => {
+    setPage(0);
+    setAppliedFilters(filters);
+  };
+
+  const resetFilters = (nextFilters: DashboardFilters) => {
+    setPage(0);
+    setAppliedFilters(nextFilters);
+  };
 
   const fetchFiles = async (orderId: string) => {
     setFilesLoading(true);
@@ -157,29 +174,13 @@ export default function OrdersPage() {
         <hr className="border-none border-t border-border mt-2" />
       </div>
 
-      <div className="mb-6 flex gap-3">
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="font-mono text-xs uppercase tracking-[0.15em] bg-transparent border border-border text-text-primary px-4 py-2 focus:outline-none focus:border-text-primary transition-colors duration-150"
-          style={{borderRadius: 0}}
-        >
-          <option value="">ALL STATUSES</option>
-          <option value="PENDING">PENDING</option>
-          <option value="PROCESSING">PROCESSING</option>
-          <option value="POSTED">POSTED</option>
-          <option value="ON_DELIVERY">ON DELIVERY</option>
-          <option value="DELIVERED">DELIVERED</option>
-          <option value="CANCELLED">CANCELLED</option>
-        </select>
-        <button
-          onClick={fetchOrders}
-          className="font-mono text-xs uppercase tracking-[0.15em] px-4 py-2 border border-border text-text-muted hover:text-text-primary hover:bg-surface transition-all duration-150"
-          style={{borderRadius: 0, background: 'transparent'}}
-        >
-          [~] Refresh
-        </button>
-      </div>
+      <DashboardFilterBar
+        filters={filters}
+        onChange={setFilters}
+        onApply={applyFilters}
+        onReset={resetFilters}
+        showAdminSearch={user?.role === 'ADMIN'}
+      />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">

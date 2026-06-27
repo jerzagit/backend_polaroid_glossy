@@ -10,6 +10,7 @@ import com.polaroid.model.enums.OrderStatus;
 import com.polaroid.model.enums.PaymentStatus;
 import com.polaroid.model.enums.Role;
 import com.polaroid.repository.OrderRepository;
+import com.polaroid.repository.OrderSpecifications;
 import com.polaroid.repository.OrderItemRepository;
 import com.polaroid.repository.OrderStatusHistoryRepository;
 import com.polaroid.repository.PrintSizeRepository;
@@ -144,6 +145,9 @@ public class OrderService {
             String customerState,
             LocalDateTime fromDate,
             LocalDateTime toDate,
+            String orderReference,
+            String customerEmail,
+            String customerPhone,
             Pageable pageable) {
         if (fromDate == null) {
             fromDate = LocalDateTime.of(2000, 1, 1, 0, 0);
@@ -151,7 +155,16 @@ public class OrderService {
         if (toDate == null) {
             toDate = LocalDateTime.of(2099, 12, 31, 23, 59);
         }
-        return orderRepository.findWithFilters(status, paymentStatus, customerState, fromDate, toDate, pageable)
+        return orderRepository.findAll(OrderSpecifications.withFilters(
+                        status,
+                        paymentStatus,
+                        customerState,
+                        fromDate,
+                        toDate,
+                        orderReference,
+                        customerEmail,
+                        customerPhone),
+                pageable)
                 .map(orderMapper::toDto);
     }
     

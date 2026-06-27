@@ -20,4 +20,5 @@ public class StatsOverviewResponse {
     private BigDecimal totalRevenue;
     private long paidOrders;
     private long pendingPayments;
+    private long totalCustomers;
 }

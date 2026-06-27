@@ -44,8 +44,8 @@ export const authAPI = {
 };
 
 export const orderAPI = {
-  getAll: (page = 0, size = 20, status?: string) =>
-    api.get('/admin/orders', { params: { page, size, status } }),
+  getAll: (page = 0, size = 20, filters: Record<string, string> = {}) =>
+    api.get('/admin/orders', { params: { page, size, ...filters } }),
   getById: (id: string) => api.get(`/admin/orders/${id}`),
   getMyOrders: () => api.get('/orders/my'),
   updateStatus: (id: string, status: string, message?: string) =>
@@ -65,7 +65,8 @@ export const userAPI = {
 };
 
 export const statsAPI = {
-  getOverview: () => api.get('/admin/stats/overview'),
+  getOverview: (filters: Record<string, string> = {}) =>
+    api.get('/admin/stats/overview', { params: filters }),
   getSales: (from?: string, to?: string) =>
     api.get('/admin/stats/sales', { params: { from, to } }),
   getOrdersByStatus: () => api.get('/admin/stats/orders-by-status'),
