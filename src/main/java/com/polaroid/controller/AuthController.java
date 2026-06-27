@@ -14,6 +14,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.Map;
+
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
@@ -46,6 +48,15 @@ public class AuthController {
     @PostMapping("/login")
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request) {
         return ResponseEntity.ok(authService.login(request));
+    }
+
+    @PostMapping("/google")
+    public ResponseEntity<AuthResponse> google(@RequestBody Map<String, String> request) {
+        return ResponseEntity.ok(authService.loginOrRegisterGoogleUser(
+                request.get("email"),
+                request.get("name"),
+                request.get("avatarUrl")
+        ));
     }
     
     @PostMapping("/refresh")

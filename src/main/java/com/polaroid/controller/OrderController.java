@@ -2,14 +2,17 @@ package com.polaroid.controller;
 
 import com.polaroid.dto.request.OrderRequest;
 import com.polaroid.dto.response.OrderResponse;
+import com.polaroid.model.enums.PaymentStatus;
 import com.polaroid.service.OrderService;
 import com.polaroid.service.PaymentService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
@@ -23,6 +26,9 @@ public class OrderController {
     
     private final OrderService orderService;
     private final PaymentService paymentService;
+
+    @Value("${app.mock-payments.enabled:false}")
+    private boolean mockPaymentsEnabled;
     
     @PostMapping
     public ResponseEntity<OrderResponse> createOrder(
@@ -62,5 +68,27 @@ public class OrderController {
             @PathVariable String orderNumber,
             Authentication authentication) {
         return ResponseEntity.ok(paymentService.createPayment(orderNumber, authentication.getName()));
+    }
+
+    @PostMapping("/{orderNumber}/mock-pay")
+    public ResponseEntity<OrderResponse> mockPayment(
+            @PathVariable String orderNumber,
+            @RequestBody(required = false) Map<String, String> request,
+            Authentication authentication) {
+        if (!mockPaymentsEnabled) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).build();
+        }
+
+        PaymentStatus status = PaymentStatus.PAID;
+        if (request != null && request.get("status") != null) {
+            status = PaymentStatus.valueOf(request.get("status").toUpperCase());
+        }
+
+        return ResponseEntity.ok(orderService.updatePaymentStatusForUser(
+                orderNumber,
+                status,
+                authentication.getName(),
+                "Local mock payment " + status.name().toLowerCase()
+        ));
     }
 }

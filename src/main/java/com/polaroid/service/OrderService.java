@@ -74,6 +74,8 @@ public class OrderService {
             orderItems.add(item);
         }
         
+        BigDecimal shipping = shippingCost(request.getCustomerState());
+
         Order order = Order.builder()
                 .orderNumber(generateOrderNumber())
                 .userId(user != null ? user.getId() : null)
@@ -85,8 +87,8 @@ public class OrderService {
                 .status(OrderStatus.PENDING)
                 .paymentStatus(PaymentStatus.PENDING)
                 .subtotal(subtotal)
-                .shipping(BigDecimal.ZERO)
-                .total(subtotal)
+                .shipping(shipping)
+                .total(subtotal.add(shipping))
                 .items(orderItems)
                 .build();
         
@@ -214,6 +216,19 @@ public class OrderService {
         
         orderRepository.save(order);
     }
+
+    @Transactional
+    public OrderResponse updatePaymentStatusForUser(String orderNumber, PaymentStatus status, String requesterEmail, String message) {
+        Order order = getAuthorizedOrder(orderNumber, requesterEmail);
+
+        order.setPaymentStatus(status);
+        if (status == PaymentStatus.PAID) {
+            order.setPaidAt(LocalDateTime.now());
+        }
+        addStatusHistory(order, order.getStatus(), message);
+
+        return orderMapper.toDto(orderRepository.save(order));
+    }
     
     private void addStatusHistory(Order order, OrderStatus status, String message) {
         OrderStatusHistory history = OrderStatusHistory.builder()
@@ -235,6 +250,13 @@ public class OrderService {
             return "[]";
         }
         return "[\"" + String.join("\",\"", list) + "\"]";
+    }
+
+    private BigDecimal shippingCost(String state) {
+        if (state == null || state.isBlank() || state.equalsIgnoreCase("w")) {
+            return new BigDecimal("7.00");
+        }
+        return new BigDecimal("11.00");
     }
 
     public Order getAuthorizedOrder(String orderNumber, String requesterEmail) {

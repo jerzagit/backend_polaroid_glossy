@@ -127,6 +127,52 @@ public class AuthService {
                 .expiresIn(tokenProvider.getExpirationTime())
                 .build();
     }
+
+    @Transactional
+    public AuthResponse loginOrRegisterGoogleUser(String email, String name, String avatarUrl) {
+        if (email == null || email.isBlank()) {
+            throw new BadRequestException("Email is required");
+        }
+
+        User user = userRepository.findByEmail(email)
+                .map(existing -> {
+                    boolean changed = false;
+                    if ((existing.getName() == null || existing.getName().isBlank()) && name != null && !name.isBlank()) {
+                        existing.setName(name);
+                        changed = true;
+                    }
+                    if ((existing.getAvatarUrl() == null || existing.getAvatarUrl().isBlank()) && avatarUrl != null && !avatarUrl.isBlank()) {
+                        existing.setAvatarUrl(avatarUrl);
+                        changed = true;
+                    }
+                    return changed ? userRepository.save(existing) : existing;
+                })
+                .orElseGet(() -> userRepository.save(User.builder()
+                        .email(email)
+                        .passwordHash(passwordEncoder.encode(UUID.randomUUID().toString()))
+                        .name(name != null && !name.isBlank() ? name : email)
+                        .avatarUrl(avatarUrl)
+                        .role(Role.CUSTOMER)
+                        .affiliateCode(generateAffiliateCode())
+                        .isActive(true)
+                        .build()));
+
+        if (!user.getIsActive()) {
+            throw new BadRequestException("Account is disabled");
+        }
+
+        String token = tokenProvider.generateToken(user.getEmail(), user.getRole().name());
+        String refreshToken = tokenProvider.generateRefreshToken(user.getEmail());
+
+        return AuthResponse.builder()
+                .token(token)
+                .refreshToken(refreshToken)
+                .email(user.getEmail())
+                .name(user.getName())
+                .role(user.getRole().name())
+                .expiresIn(tokenProvider.getExpirationTime())
+                .build();
+    }
     
     private String generateAffiliateCode() {
         return "PG" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
