@@ -55,6 +55,9 @@ toyyibpay:
   verify-callback: false
 
 app:
+  mock-storage:
+    enabled: true
+    directory: .dev-storage
   mock-payments:
     enabled: true
   setup-admin:
