@@ -204,7 +204,8 @@ public class FileService {
             }
 
             String url = signedUrl.toString();
-            return url.startsWith("http") ? url : supabaseUrl + url;
+            if (url.startsWith("http")) return url;
+            return supabaseUrl + (url.startsWith("/storage") ? "" : "/storage/v1") + url;
         } catch (Exception e) {
             log.error("Failed to create signed URL for {}: {}", key, e.getMessage());
             throw new IllegalStateException("Failed to create signed URL");
