@@ -82,8 +82,13 @@ public class OrderService {
                 .affiliateId(affiliate != null ? affiliate.getId() : null)
                 .customerName(request.getCustomerName())
                 .customerEmail(request.getCustomerEmail())
-                .customerPhone(request.getCustomerPhone())
-                .customerState(request.getCustomerState() != null ? request.getCustomerState() : "W")
+                .customerPhone(normalizeMalaysiaPhone(request.getCustomerPhone()))
+                .customerHouseUnitNo(request.getCustomerHouseUnitNo())
+                .customerAddressLine1(request.getCustomerAddressLine1())
+                .customerAddressLine2(request.getCustomerAddressLine2())
+                .customerPostcode(request.getCustomerPostcode())
+                .customerState(request.getCustomerState())
+                .customerCountry("Malaysia")
                 .status(OrderStatus.PENDING)
                 .paymentStatus(PaymentStatus.PENDING)
                 .subtotal(subtotal)
@@ -253,10 +258,35 @@ public class OrderService {
     }
 
     private BigDecimal shippingCost(String state) {
-        if (state == null || state.isBlank() || state.equalsIgnoreCase("w")) {
+        if (state == null || state.isBlank()) {
             return new BigDecimal("7.00");
         }
-        return new BigDecimal("11.00");
+
+        String normalizedState = state.trim().toLowerCase();
+        if (normalizedState.equals("sabah")
+                || normalizedState.equals("sarawak")
+                || normalizedState.equals("labuan")
+                || normalizedState.equals("e_sabah")
+                || normalizedState.equals("e_sarawak")) {
+            return new BigDecimal("11.00");
+        }
+
+        return new BigDecimal("7.00");
+    }
+
+    private String normalizeMalaysiaPhone(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return null;
+        }
+
+        String digits = phone.replaceAll("\\D", "");
+        if (digits.startsWith("60")) {
+            digits = digits.substring(2);
+        } else if (digits.startsWith("6")) {
+            digits = digits.substring(1);
+        }
+
+        return digits.isBlank() ? null : digits;
     }
 
     public Order getAuthorizedOrder(String orderNumber, String requesterEmail) {
