@@ -209,6 +209,19 @@ public class FileService {
         
         for (String key : keys) {
             try {
+                if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
+                    Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
+                    Path file = root.resolve(bucketName).resolve(key).normalize();
+                    if (!file.startsWith(root)) {
+                        throw new BadRequestException("Invalid storage key");
+                    }
+                    if (Files.exists(file)) {
+                        outputStream.write(Files.readAllBytes(file));
+                        outputStream.write(System.lineSeparator().getBytes());
+                    }
+                    continue;
+                }
+
                 String downloadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
                 
                 HttpHeaders headers = new HttpHeaders();
@@ -242,8 +255,21 @@ public class FileService {
     }
 
     private List<Map<String, String>> listFilesForOrder(Order order) {
-        String folder = "orders/" + order.getId() + "/original";
         List<Map<String, String>> files = new ArrayList<>();
+        List<String> persistedKeys = uploadedFileKeys(order);
+
+        if (!persistedKeys.isEmpty()) {
+            for (String key : persistedKeys) {
+                Map<String, String> fileInfo = new HashMap<>();
+                fileInfo.put("name", fileNameFromKey(key));
+                fileInfo.put("key", key);
+                fileInfo.put("url", createSignedUrl(key));
+                files.add(fileInfo);
+            }
+            return files;
+        }
+
+        String folder = "orders/" + order.getId() + "/original";
         
         try {
             String listUrl = String.format("%s/storage/v1/object/list/%s", supabaseUrl, bucketName);
@@ -277,9 +303,49 @@ public class FileService {
         
         return files;
     }
+
+    private List<String> uploadedFileKeys(Order order) {
+        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
+        List<String> keys = new ArrayList<>();
+
+        for (OrderItem item : items) {
+            keys.addAll(readJsonStringList(item.getS3Keys()));
+        }
+
+        return keys.stream()
+                .filter(key -> key != null && !key.isBlank())
+                .distinct()
+                .toList();
+    }
+
+    private List<String> readJsonStringList(String json) {
+        try {
+            if (json == null || json.isBlank()) {
+                return List.of();
+            }
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to parse uploaded file metadata: {}", e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String fileNameFromKey(String key) {
+        int index = key.lastIndexOf('/');
+        return index >= 0 ? key.substring(index + 1) : key;
+    }
     
     public String createSignedUrl(String key) {
         try {
+            if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
+                Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
+                Path file = root.resolve(bucketName).resolve(key).normalize();
+                if (!file.startsWith(root)) {
+                    throw new BadRequestException("Invalid storage key");
+                }
+                return file.toUri().toString();
+            }
+
             String signUrl = String.format("%s/storage/v1/object/sign/%s/%s", supabaseUrl, bucketName, key);
 
             HttpHeaders headers = new HttpHeaders();

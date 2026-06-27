@@ -39,7 +39,12 @@ export interface Order {
   customerName: string;
   customerEmail: string;
   customerPhone?: string;
+  customerHouseUnitNo?: string;
+  customerAddressLine1?: string;
+  customerAddressLine2?: string;
+  customerPostcode?: string;
   customerState: string;
+  customerCountry?: string;
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod?: string;

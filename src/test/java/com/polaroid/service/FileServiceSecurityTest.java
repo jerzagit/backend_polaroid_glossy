@@ -1,6 +1,7 @@
 package com.polaroid.service;
 
 import com.polaroid.exception.BadRequestException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockMultipartFile;
@@ -141,7 +142,7 @@ class FileServiceSecurityTest {
 
     private byte[] processImage(MultipartFile file) {
         try {
-            FileService service = new FileService(null, null, null, null);
+            FileService service = new FileService(null, null, null, null, null, new ObjectMapper());
             Method method = FileService.class.getDeclaredMethod("validateAndProcessImage", MultipartFile.class);
             method.setAccessible(true);
             return (byte[]) method.invoke(service, file);
@@ -157,7 +158,7 @@ class FileServiceSecurityTest {
 
     private String detectFormat(byte[] fileBytes) {
         try {
-            FileService service = new FileService(null, null, null, null);
+            FileService service = new FileService(null, null, null, null, null, new ObjectMapper());
             Method method = FileService.class.getDeclaredMethod("detectImageFormat", byte[].class);
             method.setAccessible(true);
             return (String) method.invoke(service, fileBytes);

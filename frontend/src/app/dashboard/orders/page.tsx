@@ -304,6 +304,20 @@ export default function OrdersPage() {
                     <p className="font-mono text-sm text-text-primary">{selectedOrder.customerState.toUpperCase()}</p>
                   </div>
                   <div>
+                    <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Delivery Address</p>
+                    <div className="font-mono text-sm text-text-primary space-y-1">
+                      {selectedOrder.customerHouseUnitNo && <p>{selectedOrder.customerHouseUnitNo}</p>}
+                      {selectedOrder.customerAddressLine1 && <p>{selectedOrder.customerAddressLine1}</p>}
+                      {selectedOrder.customerAddressLine2 && <p>{selectedOrder.customerAddressLine2}</p>}
+                      {(selectedOrder.customerPostcode || selectedOrder.customerState) && (
+                        <p>
+                          {[selectedOrder.customerPostcode, selectedOrder.customerState?.toUpperCase()].filter(Boolean).join(' ')}
+                        </p>
+                      )}
+                      <p>{selectedOrder.customerCountry || 'Malaysia'}</p>
+                    </div>
+                  </div>
+                  <div>
                     <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Total</p>
                     <p className="font-mono text-sm text-text-primary">RM {selectedOrder.total.toFixed(2)}</p>
                   </div>

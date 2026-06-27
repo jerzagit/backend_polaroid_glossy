@@ -42,10 +42,26 @@ public class Order extends Auditable {
     
     @Column(name = "customer_phone")
     private String customerPhone;
+
+    @Column(name = "customer_house_unit_no")
+    private String customerHouseUnitNo;
+
+    @Column(name = "customer_address_line_1")
+    private String customerAddressLine1;
+
+    @Column(name = "customer_address_line_2")
+    private String customerAddressLine2;
+
+    @Column(name = "customer_postcode")
+    private String customerPostcode;
     
     @Column(name = "customer_state")
     @Builder.Default
-    private String customerState = "W";
+    private String customerState = "selangor";
+
+    @Column(name = "customer_country")
+    @Builder.Default
+    private String customerCountry = "Malaysia";
     
     @Enumerated(EnumType.STRING)
     @Builder.Default

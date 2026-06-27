@@ -2,6 +2,7 @@ package com.polaroid.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -16,7 +17,25 @@ public class OrderRequest {
     private String customerEmail;
     
     private String customerPhone;
+
+    @NotBlank(message = "House/unit number is required")
+    private String customerHouseUnitNo;
+
+    @NotBlank(message = "Address line 1 is required")
+    private String customerAddressLine1;
+
+    private String customerAddressLine2;
+
+    @NotBlank(message = "Postcode is required")
+    @Pattern(regexp = "\\d{5}", message = "Postcode must be 5 digits")
+    private String customerPostcode;
+
+    @NotBlank(message = "State is required")
     private String customerState;
+
+    @NotBlank(message = "Country is required")
+    private String customerCountry;
+
     private String affiliateCode;
     
     @NotNull(message = "Items are required")

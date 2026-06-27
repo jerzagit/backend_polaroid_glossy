@@ -23,7 +23,12 @@ public class OrderResponse {
     private String customerName;
     private String customerEmail;
     private String customerPhone;
+    private String customerHouseUnitNo;
+    private String customerAddressLine1;
+    private String customerAddressLine2;
+    private String customerPostcode;
     private String customerState;
+    private String customerCountry;
     private OrderStatus status;
     private PaymentStatus paymentStatus;
     private String paymentMethod;

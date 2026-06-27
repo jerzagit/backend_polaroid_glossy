@@ -60,7 +60,7 @@ public class PaymentService {
         params.add("billExternalReferenceNo", order.getOrderNumber());
         params.add("billTo", order.getCustomerName());
         params.add("billEmail", order.getCustomerEmail());
-        params.add("billPhone", order.getCustomerPhone() != null ? order.getCustomerPhone() : "");
+        params.add("billPhone", formatMalaysiaPhoneForPayment(order.getCustomerPhone()));
         params.add("billPaymentChannel", "0");
         params.add("billChargeToCustomer", "1");
         
@@ -161,6 +161,21 @@ public class PaymentService {
 
     private int toCents(BigDecimal amount) {
         return amount.multiply(new BigDecimal("100")).setScale(0, RoundingMode.HALF_UP).intValueExact();
+    }
+
+    private String formatMalaysiaPhoneForPayment(String phone) {
+        if (phone == null || phone.isBlank()) {
+            return "";
+        }
+
+        String digits = phone.replaceAll("\\D", "");
+        if (digits.startsWith("60")) {
+            return "+" + digits;
+        }
+        if (digits.startsWith("6")) {
+            return "+60" + digits.substring(1);
+        }
+        return "+60" + digits;
     }
 
     private int parseAmountToCents(String amount) {
