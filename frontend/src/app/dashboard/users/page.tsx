@@ -6,11 +6,11 @@ import { userAPI } from '@/lib/api';
 import { User, Role, PaginatedResponse } from '@/types';
 
 const roleColors: Record<Role, string> = {
-  CUSTOMER: 'bg-gray-100 text-gray-800',
-  AFFILIATE: 'bg-yellow-100 text-yellow-800',
-  PACKER: 'bg-blue-100 text-blue-800',
-  MARKETING: 'bg-purple-100 text-purple-800',
-  ADMIN: 'bg-red-100 text-red-800',
+  CUSTOMER: 'text-text-muted border-border',
+  AFFILIATE: 'text-text-muted border-border',
+  PACKER: 'text-text-primary border-border',
+  MARKETING: 'text-text-primary border-border',
+  ADMIN: 'text-accent border-accent',
 };
 
 export default function UsersPage() {
@@ -60,55 +60,63 @@ export default function UsersPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-6">Users</h1>
+      <div className="mb-8">
+        <h1 className="font-display text-xl text-text-primary font-bold tracking-tight">Users</h1>
+        <hr className="border-none border-t border-border mt-2" />
+      </div>
 
-      <div className="mb-4 flex justify-end">
+      <div className="mb-6">
         <button
           onClick={fetchUsers}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="font-mono text-xs uppercase tracking-[0.15em] px-4 py-2 border border-border text-text-muted hover:text-text-primary hover:bg-surface transition-all duration-150"
+          style={{borderRadius: 0, background: 'transparent'}}
         >
-          Refresh
+          [~] Refresh
         </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           {loading ? (
-            <div>Loading...</div>
+            <div className="glyph-scan p-8">
+              <span className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">LOADING_</span>
+            </div>
           ) : (
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <table className="min-w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Phone</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Joined</th>
+            <div className="border border-border" style={{borderRadius: 0, background: 'var(--color-surface)'}}>
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Name</th>
+                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Email</th>
+                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Phone</th>
+                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Role</th>
+                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Status</th>
+                    <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">Joined</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody>
                   {users.map((user) => (
                     <tr
                       key={user.id}
                       onClick={() => setSelectedUser(user)}
-                      className={`cursor-pointer hover:bg-gray-50 ${selectedUser?.id === user.id ? 'bg-blue-50' : ''}`}
+                      className={`cursor-pointer border-b border-border transition-colors duration-150 hover:bg-surface-2 ${
+                        selectedUser?.id === user.id ? 'bg-surface-2 border-l-2 border-l-accent' : ''
+                      }`}
                     >
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">{user.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">{user.email}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">{user.phone || '-'}</td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs rounded-full ${roleColors[user.role]}`}>
+                      <td className="px-4 py-3 font-mono text-sm text-text-primary">{user.name}</td>
+                      <td className="px-4 py-3 font-mono text-sm text-text-primary">{user.email}</td>
+                      <td className="px-4 py-3 font-mono text-sm text-text-muted">{user.phone || '-'}</td>
+                      <td className="px-4 py-3">
+                        <span className={`font-mono text-xs uppercase tracking-[0.1em] border px-2 py-0.5 ${roleColors[user.role]}`}>
                           {user.role}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={user.isActive ? 'text-green-600' : 'text-red-600'}>
+                      <td className="px-4 py-3 font-mono text-xs uppercase tracking-[0.1em]">
+                        <span className={user.isActive ? 'text-text-primary' : 'text-accent'}>
                           {user.isActive ? 'Active' : 'Inactive'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                      <td className="px-4 py-3 font-mono text-xs text-text-muted">
                         {new Date(user.createdAt).toLocaleDateString()}
                       </td>
                     </tr>
@@ -118,83 +126,94 @@ export default function UsersPage() {
             </div>
           )}
 
-          <div className="mt-4 flex justify-center gap-2">
+          <div className="mt-4 flex justify-center items-center gap-4">
             <button
               onClick={() => setPage(p => Math.max(0, p - 1))}
               disabled={page === 0}
-              className="px-4 py-2 border rounded-lg disabled:opacity-50"
+              className="font-mono text-xs uppercase tracking-[0.15em] px-4 py-2 border border-border text-text-muted hover:text-text-primary disabled:opacity-30 transition-all duration-150"
+              style={{borderRadius: 0, background: 'transparent'}}
             >
-              Previous
+              {'[<]'} Prev
             </button>
-            <span className="px-4 py-2">
-              Page {page + 1} of {totalPages}
+            <span className="font-mono text-xs text-text-muted">
+              {page + 1} / {totalPages}
             </span>
             <button
               onClick={() => setPage(p => p + 1)}
               disabled={page >= totalPages - 1}
-              className="px-4 py-2 border rounded-lg disabled:opacity-50"
+              className="font-mono text-xs uppercase tracking-[0.15em] px-4 py-2 border border-border text-text-muted hover:text-text-primary disabled:opacity-30 transition-all duration-150"
+              style={{borderRadius: 0, background: 'transparent'}}
             >
-              Next
+              Next {'[>]'}
             </button>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
+        <div className="border border-border" style={{borderRadius: 0, background: 'var(--color-surface)'}}>
           {selectedUser ? (
-            <div>
-              <h2 className="text-lg font-bold mb-4">User Details</h2>
-              <div className="space-y-3">
+            <div className="p-6 space-y-5">
+              <div>
+                <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Name</p>
+                <p className="font-mono text-sm text-text-primary">{selectedUser.name}</p>
+              </div>
+              <div>
+                <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Email</p>
+                <p className="font-mono text-sm text-text-primary">{selectedUser.email}</p>
+              </div>
+              <div>
+                <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Phone</p>
+                <p className="font-mono text-sm text-text-muted">{selectedUser.phone || '-'}</p>
+              </div>
+              <div>
+                <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Affiliate Code</p>
+                <p className="font-mono text-sm text-text-muted">{selectedUser.affiliateCode || '-'}</p>
+              </div>
+              <div>
+                <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Status</p>
+                <p className={`font-mono text-sm ${selectedUser.isActive ? 'text-text-primary' : 'text-accent'}`}>
+                  {selectedUser.isActive ? 'Active' : 'Inactive'}
+                </p>
+              </div>
+              <div>
+                <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Role</p>
+                <span className={`font-mono text-xs uppercase tracking-[0.1em] border px-2 py-0.5 ${roleColors[selectedUser.role]}`}>
+                  {selectedUser.role}
+                </span>
+              </div>
+              {canManageUsers && (
                 <div>
-                  <label className="text-sm text-gray-500">Name</label>
-                  <p className="font-medium">{selectedUser.name}</p>
+                  <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Update Role</p>
+                  <select
+                    value={selectedUser.role}
+                    onChange={(e) => handleRoleUpdate(selectedUser.id, e.target.value)}
+                    disabled={updating || selectedUser.id === currentUser?.id}
+                    className="w-full font-mono text-sm bg-transparent border border-border text-text-primary px-3 py-2 focus:outline-none focus:border-text-primary transition-colors duration-150 disabled:opacity-50"
+                    style={{borderRadius: 0}}
+                  >
+                    <option value="CUSTOMER">CUSTOMER</option>
+                    <option value="AFFILIATE">AFFILIATE</option>
+                    <option value="PACKER">PACKER</option>
+                    <option value="MARKETING">MARKETING</option>
+                    <option value="ADMIN">ADMIN</option>
+                  </select>
                 </div>
-                <div>
-                  <label className="text-sm text-gray-500">Email</label>
-                  <p className="font-medium">{selectedUser.email}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-500">Phone</label>
-                  <p className="font-medium">{selectedUser.phone || '-'}</p>
-                </div>
-                <div>
-                  <label className="text-sm text-gray-500">Affiliate Code</label>
-                  <p className="font-medium">{selectedUser.affiliateCode || '-'}</p>
-                </div>
-                {canManageUsers && (
-                  <div>
-                    <label className="text-sm text-gray-500">Role</label>
-                    <select
-                      value={selectedUser.role}
-                      onChange={(e) => handleRoleUpdate(selectedUser.id, e.target.value)}
-                      disabled={updating || selectedUser.id === currentUser?.id}
-                      className="w-full mt-1 px-3 py-2 border rounded-lg"
-                    >
-                      <option value="CUSTOMER">Customer</option>
-                      <option value="AFFILIATE">Affiliate</option>
-                      <option value="PACKER">Packer</option>
-                      <option value="MARKETING">Marketing</option>
-                      <option value="ADMIN">Admin</option>
-                    </select>
-                  </div>
-                )}
-                <div>
-                  <label className="text-sm text-gray-500">Status</label>
-                  <p className={`font-medium ${selectedUser.isActive ? 'text-green-600' : 'text-red-600'}`}>
-                    {selectedUser.isActive ? 'Active' : 'Inactive'}
-                  </p>
-                </div>
-                <div className="pt-4 border-t">
-                  <p className="text-xs text-gray-500">
-                    Joined: {new Date(selectedUser.createdAt).toLocaleString()}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    Updated: {new Date(selectedUser.updatedAt).toLocaleString()}
-                  </p>
-                </div>
+              )}
+              <hr className="border-none border-t border-border" />
+              <div className="space-y-1">
+                <p className="font-mono text-xs text-text-muted">
+                  JOINED: {new Date(selectedUser.createdAt).toLocaleString()}
+                </p>
+                <p className="font-mono text-xs text-text-muted">
+                  UPDATED: {new Date(selectedUser.updatedAt).toLocaleString()}
+                </p>
               </div>
             </div>
           ) : (
-            <p className="text-gray-500 text-center">Select a user to view details</p>
+            <div className="p-6 text-center">
+              <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">
+                Select a user
+              </p>
+            </div>
           )}
         </div>
       </div>

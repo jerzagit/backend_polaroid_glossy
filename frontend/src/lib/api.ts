@@ -72,4 +72,11 @@ export const statsAPI = {
   getTopSizes: () => api.get('/admin/stats/top-sizes'),
 };
 
+export const fileAPI = {
+  listByOrder: (orderId: string) =>
+    api.get(`/files/order/${orderId}`),
+  downloadAll: (orderId: string) =>
+    api.get(`/files/order/${orderId}/download`, { responseType: 'blob' }),
+};
+
 export default api;
