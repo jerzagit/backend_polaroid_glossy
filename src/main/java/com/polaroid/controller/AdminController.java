@@ -20,6 +20,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -42,8 +43,17 @@ public class AdminController {
     
     @GetMapping("/stats/overview")
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING')")
-    public ResponseEntity<StatsOverviewResponse> getStatsOverview() {
-        return ResponseEntity.ok(statsService.getOverview());
+    public ResponseEntity<StatsOverviewResponse> getStatsOverview(
+            @RequestParam(required = false) OrderStatus status,
+            @RequestParam(required = false) PaymentStatus paymentStatus,
+            @RequestParam(required = false) String customerState,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toDate,
+            @RequestParam(required = false) String orderReference,
+            @RequestParam(required = false) String customerEmail,
+            @RequestParam(required = false) String customerPhone) {
+        return ResponseEntity.ok(statsService.getOverview(
+                status, paymentStatus, customerState, fromDate, toDate, orderReference, customerEmail, customerPhone));
     }
     
     @GetMapping("/stats/orders-by-status")
@@ -70,8 +80,11 @@ public class AdminController {
             @RequestParam(required = false) OrderStatus status,
             @RequestParam(required = false) PaymentStatus paymentStatus,
             @RequestParam(required = false) String customerState,
-            @RequestParam(required = false) LocalDateTime fromDate,
-            @RequestParam(required = false) LocalDateTime toDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime toDate,
+            @RequestParam(required = false) String orderReference,
+            @RequestParam(required = false) String customerEmail,
+            @RequestParam(required = false) String customerPhone,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
@@ -83,7 +96,7 @@ public class AdminController {
         Pageable pageable = PageRequest.of(page, size, sort);
         
         return ResponseEntity.ok(orderService.getOrdersWithFilters(
-                status, paymentStatus, customerState, fromDate, toDate, pageable));
+                status, paymentStatus, customerState, fromDate, toDate, orderReference, customerEmail, customerPhone, pageable));
     }
     
     @GetMapping("/orders/{id}")

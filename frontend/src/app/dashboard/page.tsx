@@ -4,16 +4,21 @@ import { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { statsAPI } from '@/lib/api';
 import { StatsOverview } from '@/types';
+import DashboardFilterBar from '@/components/DashboardFilterBar';
+import { DashboardFilters, buildFilterParams, createDefaultDashboardFilters } from '@/lib/dashboardFilters';
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const [stats, setStats] = useState<StatsOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState<DashboardFilters>(() => createDefaultDashboardFilters());
+  const [appliedFilters, setAppliedFilters] = useState<DashboardFilters>(() => createDefaultDashboardFilters());
 
   useEffect(() => {
     const fetchStats = async () => {
+      setLoading(true);
       try {
-        const response = await statsAPI.getOverview();
+        const response = await statsAPI.getOverview(buildFilterParams(appliedFilters));
         setStats(response.data);
       } catch (error) {
         console.error('Failed to fetch stats', error);
@@ -26,7 +31,15 @@ export default function DashboardPage() {
     } else {
       setLoading(false);
     }
-  }, [user]);
+  }, [user, appliedFilters]);
+
+  const applyFilters = () => {
+    setAppliedFilters(filters);
+  };
+
+  const resetFilters = (nextFilters: DashboardFilters) => {
+    setAppliedFilters(nextFilters);
+  };
 
   if (loading) {
     return (
@@ -54,8 +67,16 @@ export default function DashboardPage() {
     <div>
       <div className="mb-8">
         <h1 className="font-display text-xl text-text-primary font-bold">Overview</h1>
-        <p className="text-sm text-text-muted mt-1">Today&apos;s order, fulfillment, and customer activity.</p>
+        <p className="text-sm text-text-muted mt-1">Filtered order, fulfillment, and customer activity.</p>
       </div>
+
+      <DashboardFilterBar
+        filters={filters}
+        onChange={setFilters}
+        onApply={applyFilters}
+        onReset={resetFilters}
+        showAdminSearch={user?.role === 'ADMIN'}
+      />
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {statCards.map((card) => (
