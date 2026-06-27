@@ -33,6 +33,11 @@ spring:
       max-file-size: 10MB
       max-request-size: 10MB
 
+  flyway:
+    baseline-on-migrate: true
+    baseline-version: 2
+    baseline-description: Existing production schema before Fly deployment
+
 jwt:
   secret: ${JWT_SECRET}
   expiration: 86400000
