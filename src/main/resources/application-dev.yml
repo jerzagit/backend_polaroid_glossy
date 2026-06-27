@@ -6,10 +6,10 @@ spring:
     name: polaroid-backend
   
   datasource:
-    url: jdbc:postgresql://localhost:5432/polaroid
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/polaroid}
     driver-class-name: org.postgresql.Driver
-    username: postgres
-    password: password
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:password}
     
   h2:
     console:

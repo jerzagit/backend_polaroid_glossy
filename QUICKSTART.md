@@ -14,10 +14,12 @@ This guide will help you get the Polaroid Glossy backend running in minutes.
 
 ## Step 1: Start PostgreSQL (Using Docker)
 
-Run this command in PowerShell or Command Prompt:
+Run this command:
 ```bash
 docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=polaroid --name polaroid-postgres postgres:15
 ```
+
+If port `5432` is already used by another local project, skip this command. The backend run script starts `polaroid-postgres-dev` on port `5433`.
 
 Verify PostgreSQL is running:
 ```bash
@@ -54,8 +56,10 @@ flyway:
 ## Step 3: Start the Backend
 
 ```bash
-./apache-maven-3.9.6/bin/mvn.cmd spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=dev"
+./scripts/run-backend-dev.sh
 ```
+
+This script uses Java 17 only for this project process. It does not change your global Java configuration.
 
 Wait for this message:
 ```

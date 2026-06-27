@@ -86,6 +86,8 @@ polaroid-backend/
 docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=polaroid --name polaroid-postgres postgres:15
 ```
 
+If another local project already uses port `5432`, the project run script starts `polaroid-postgres-dev` on port `5433` instead.
+
 #### 2. Configure Environment
 Edit `.env.dev` file with your database credentials:
 ```bash
@@ -100,8 +102,8 @@ JWT_SECRET=dev-secret-key-minimum-32-characters-long-for-development
 
 #### 3. Run Backend
 ```bash
-# Using Maven (dev profile — Flyway disabled, Hibernate manages schema)
-./apache-maven-3.9.6/bin/mvn.cmd spring-boot:run "-Dspring-boot.run.arguments=--spring.profiles.active=dev"
+# Uses Java 17 for this project only and starts the dev profile
+./scripts/run-backend-dev.sh
 ```
 
 The API will be available at `http://localhost:8080`
