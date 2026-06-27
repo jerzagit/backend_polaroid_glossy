@@ -3,8 +3,8 @@ import type { Metadata } from 'next';
 import { AuthProvider } from '@/context/AuthContext';
 
 export const metadata: Metadata = {
-  title: 'Polaroid Glossy - Admin',
-  description: 'Order management system for Polaroid Glossy',
+  title: 'Seller Dashboard',
+  description: 'Seller order management dashboard',
 };
 
 export default function RootLayout({

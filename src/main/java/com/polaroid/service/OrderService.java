@@ -138,6 +138,12 @@ public class OrderService {
             LocalDateTime fromDate,
             LocalDateTime toDate,
             Pageable pageable) {
+        if (fromDate == null) {
+            fromDate = LocalDateTime.of(2000, 1, 1, 0, 0);
+        }
+        if (toDate == null) {
+            toDate = LocalDateTime.of(2099, 12, 31, 23, 59);
+        }
         return orderRepository.findWithFilters(status, paymentStatus, customerState, fromDate, toDate, pageable)
                 .map(orderMapper::toDto);
     }
