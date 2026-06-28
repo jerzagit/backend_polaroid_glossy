@@ -37,6 +37,8 @@ public class OrderRequest {
     private String customerCountry;
 
     private String affiliateCode;
+
+    private String notes;
     
     @NotNull(message = "Items are required")
     private List<OrderItemRequest> items;

@@ -128,7 +128,7 @@ public class AdminController {
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING', 'PACKER')")
     public ResponseEntity<OrderResponse> addNotes(
             @PathVariable UUID id,
-            @RequestParam String notes) {
+            @RequestParam(required = false) String notes) {
         return ResponseEntity.ok(orderService.addNotes(id, notes));
     }
     
