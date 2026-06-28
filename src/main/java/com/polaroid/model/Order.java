@@ -54,6 +54,9 @@ public class Order extends Auditable {
 
     @Column(name = "customer_postcode")
     private String customerPostcode;
+
+    @Column(name = "customer_city")
+    private String customerCity;
     
     @Column(name = "customer_state")
     @Builder.Default

@@ -341,9 +341,9 @@ export default function OrdersPage() {
                       {selectedOrder.customerHouseUnitNo && <p>{selectedOrder.customerHouseUnitNo}</p>}
                       {selectedOrder.customerAddressLine1 && <p>{selectedOrder.customerAddressLine1}</p>}
                       {selectedOrder.customerAddressLine2 && <p>{selectedOrder.customerAddressLine2}</p>}
-                      {(selectedOrder.customerPostcode || selectedOrder.customerState) && (
+                      {(selectedOrder.customerPostcode || selectedOrder.customerCity || selectedOrder.customerState) && (
                         <p>
-                          {[selectedOrder.customerPostcode, selectedOrder.customerState?.toUpperCase()].filter(Boolean).join(' ')}
+                          {[selectedOrder.customerPostcode, selectedOrder.customerCity, selectedOrder.customerState?.toUpperCase()].filter(Boolean).join(' ')}
                         </p>
                       )}
                       <p>{selectedOrder.customerCountry || 'Malaysia'}</p>

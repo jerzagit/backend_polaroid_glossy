@@ -30,6 +30,9 @@ public class OrderRequest {
     @Pattern(regexp = "\\d{5}", message = "Postcode must be 5 digits")
     private String customerPostcode;
 
+    @NotBlank(message = "City is required")
+    private String customerCity;
+
     @NotBlank(message = "State is required")
     private String customerState;
 
