@@ -20,6 +20,7 @@ import java.util.UUID;
 @Repository
 public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
     Optional<Order> findByOrderNumber(String orderNumber);
+    Optional<Order> findByToyyibpayRef(String toyyibpayRef);
     
     Page<Order> findByUserId(UUID userId, Pageable pageable);
     Page<Order> findByAffiliateId(UUID affiliateId, Pageable pageable);

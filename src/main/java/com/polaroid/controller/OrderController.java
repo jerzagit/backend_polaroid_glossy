@@ -37,6 +37,19 @@ public class OrderController {
         String userEmail = authentication != null ? authentication.getName() : null;
         return ResponseEntity.ok(orderService.createOrder(request, userEmail));
     }
+
+    @GetMapping("/payment-return")
+    public ResponseEntity<Map<String, String>> getPaymentReturnStatus(
+            @RequestParam(required = false, name = "order_id") String orderId,
+            @RequestParam(required = false, name = "orderId") String camelOrderId,
+            @RequestParam(required = false) String billcode,
+            @RequestParam(required = false) String refno,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false, name = "status_id") String statusId) {
+        String orderReference = orderId != null && !orderId.isBlank() ? orderId : camelOrderId;
+        String gatewayStatus = status != null && !status.isBlank() ? status : statusId;
+        return ResponseEntity.ok(paymentService.resolvePaymentReturn(orderReference, billcode, refno, gatewayStatus));
+    }
     
     @GetMapping("/{orderNumber}")
     public ResponseEntity<OrderResponse> getOrderByNumber(
