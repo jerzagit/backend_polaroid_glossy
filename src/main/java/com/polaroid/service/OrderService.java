@@ -90,6 +90,7 @@ public class OrderService {
                 .customerPostcode(request.getCustomerPostcode())
                 .customerState(request.getCustomerState())
                 .customerCountry("Malaysia")
+                .notes(request.getNotes())
                 .status(OrderStatus.PENDING)
                 .paymentStatus(PaymentStatus.PENDING)
                 .subtotal(subtotal)

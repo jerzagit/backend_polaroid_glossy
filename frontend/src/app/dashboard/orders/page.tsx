@@ -191,8 +191,8 @@ export default function OrdersPage() {
               <span className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">LOADING_</span>
             </div>
           ) : (
-            <div className="border border-border overflow-hidden" style={{borderRadius: 0, background: 'var(--color-surface)'}}>
-              <table className="w-full">
+            <div className="border border-border overflow-x-auto" style={{borderRadius: 0, background: 'var(--color-surface)'}}>
+              <table className={`w-full ${hasSelectedOrder ? 'min-w-[720px]' : 'min-w-[920px]'}`}>
                 <thead>
                   <tr className="border-b border-border">
                     <th className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] px-4 py-3 text-left font-normal">No#</th>
