@@ -1,6 +1,7 @@
 package com.polaroid.controller;
 
 import com.polaroid.model.enums.PaymentStatus;
+import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.service.OrderService;
 import com.polaroid.service.PaymentService;
 import lombok.RequiredArgsConstructor;
@@ -28,14 +29,9 @@ public class WebhookController {
             @RequestParam(required = false) String amount,
             @RequestParam(required = false) String hash) {
         
-        String orderNumber = order_id != null && !order_id.isBlank() ? order_id : refno;
-        log.info("ToyyibPay callback received - order: {}, billcode: {}, status: {}, amount: {}", orderNumber, billcode, status, amount);
-        
-        if (orderNumber == null || orderNumber.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("status", "error", "message", "Missing order reference"));
-        }
-        
         try {
+            String orderNumber = paymentService.resolveOrderNumber(order_id, billcode, refno);
+            log.info("ToyyibPay callback received - order: {}, billcode: {}, status: {}, amount: {}", orderNumber, billcode, status, amount);
             PaymentStatus paymentStatus = paymentService.verifyCallback(orderNumber, refno, billcode, status, amount, hash);
             orderService.updatePaymentStatus(orderNumber, paymentStatus);
             return ResponseEntity.ok(Map.of("status", paymentStatus.name().toLowerCase(), "message", "Payment callback processed"));
@@ -43,6 +39,8 @@ public class WebhookController {
             log.warn("Rejected ToyyibPay callback: {}", e.getMessage());
             return ResponseEntity.status(403).body(Map.of("status", "error", "message", "Invalid payment callback"));
         } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("status", "error", "message", e.getMessage()));
+        } catch (ResourceNotFoundException e) {
             return ResponseEntity.badRequest().body(Map.of("status", "error", "message", e.getMessage()));
         } catch (Exception e) {
             log.error("Error processing ToyyibPay callback: {}", e.getMessage(), e);

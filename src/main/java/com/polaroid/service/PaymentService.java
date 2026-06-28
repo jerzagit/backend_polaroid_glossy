@@ -141,6 +141,39 @@ public class PaymentService {
         };
     }
 
+    public String resolveOrderNumber(String orderReference, String billCode, String refno) {
+        return resolveOrder(orderReference, billCode, refno).getOrderNumber();
+    }
+
+    public Map<String, String> resolvePaymentReturn(String orderReference, String billCode, String refno, String status) {
+        Order order = resolveOrder(orderReference, billCode, refno);
+        Map<String, String> result = new HashMap<>();
+        result.put("orderNumber", order.getOrderNumber());
+        result.put("paymentStatus", order.getPaymentStatus().name());
+        result.put("orderStatus", order.getStatus().name());
+        if (status != null && !status.isBlank()) {
+            result.put("gatewayStatus", status);
+        }
+        return result;
+    }
+
+    private Order resolveOrder(String orderReference, String billCode, String refno) {
+        return findOrderByOrderNumberOrBillCode(orderReference)
+                .or(() -> findOrderByOrderNumberOrBillCode(billCode))
+                .or(() -> findOrderByOrderNumberOrBillCode(refno))
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+    }
+
+    private java.util.Optional<Order> findOrderByOrderNumberOrBillCode(String value) {
+        if (value == null || value.isBlank()) {
+            return java.util.Optional.empty();
+        }
+
+        String trimmed = value.trim();
+        return orderRepository.findByOrderNumber(trimmed)
+                .or(() -> orderRepository.findByToyyibpayRef(trimmed));
+    }
+
     private String callbackHash(String status, String orderNumber, String refno) {
         return md5(toyyibpaySecretKey + status + orderNumber + refno + "ok");
     }

@@ -62,7 +62,7 @@ public class FileController {
         byte[] zipData = fileService.downloadFiles(keys);
         
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
+        headers.setContentType(MediaType.parseMediaType("application/zip"));
         headers.setContentDispositionFormData("attachment", orderId + "_images.zip");
         
         return ResponseEntity.ok()

@@ -18,6 +18,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.UUID;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageWriteParam;
@@ -205,43 +207,60 @@ public class FileService {
     }
     
     public byte[] downloadFiles(List<String> keys) throws IOException {
-        ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
-        
-        for (String key : keys) {
-            try {
-                if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
-                    Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
-                    Path file = root.resolve(bucketName).resolve(key).normalize();
-                    if (!file.startsWith(root)) {
-                        throw new BadRequestException("Invalid storage key");
+        ByteArrayOutputStream zipBuffer = new ByteArrayOutputStream();
+        try (ZipOutputStream zipOutputStream = new ZipOutputStream(zipBuffer)) {
+            for (String key : keys) {
+                try {
+                    byte[] fileBytes = loadFileBytes(key);
+                    if (fileBytes.length == 0) {
+                        continue;
                     }
-                    if (Files.exists(file)) {
-                        outputStream.write(Files.readAllBytes(file));
-                        outputStream.write(System.lineSeparator().getBytes());
-                    }
-                    continue;
-                }
 
-                String downloadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
-                
-                HttpHeaders headers = new HttpHeaders();
-                headers.set("Authorization", "Bearer " + supabaseKey);
-                
-                HttpEntity<?> requestEntity = new HttpEntity<>(headers);
-                
-                ResponseEntity<byte[]> response = restTemplate.exchange(
-                    downloadUrl, HttpMethod.GET, requestEntity, byte[].class);
-                
-                if (response.getBody() != null) {
-                    outputStream.write(response.getBody());
-                    outputStream.write(System.lineSeparator().getBytes());
+                    ZipEntry zipEntry = new ZipEntry(fileNameFromKey(key));
+                    zipOutputStream.putNextEntry(zipEntry);
+                    zipOutputStream.write(fileBytes);
+                    zipOutputStream.closeEntry();
+                } catch (Exception e) {
+                    log.warn("Failed to add file {} to zip: {}", key, e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("Failed to download file {}: {}", key, e.getMessage());
             }
         }
-        
-        return outputStream.toByteArray();
+
+        return zipBuffer.toByteArray();
+    }
+
+    private byte[] loadFileBytes(String key) throws IOException {
+        try {
+            if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
+                Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
+                Path file = root.resolve(bucketName).resolve(key).normalize();
+                if (!file.startsWith(root)) {
+                    throw new BadRequestException("Invalid storage key");
+                }
+                if (Files.exists(file)) {
+                    return Files.readAllBytes(file);
+                }
+                return new byte[0];
+            }
+
+            String downloadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
+
+            HttpHeaders headers = new HttpHeaders();
+            headers.set("Authorization", "Bearer " + supabaseKey);
+
+            HttpEntity<?> requestEntity = new HttpEntity<>(headers);
+
+            ResponseEntity<byte[]> response = restTemplate.exchange(
+                downloadUrl, HttpMethod.GET, requestEntity, byte[].class);
+
+            if (response.getBody() != null) {
+                return response.getBody();
+            }
+        } catch (Exception e) {
+            log.warn("Failed to download file {}: {}", key, e.getMessage());
+        }
+
+        return new byte[0];
     }
     
     public List<Map<String, String>> listFiles(String orderId, String userEmail) {
