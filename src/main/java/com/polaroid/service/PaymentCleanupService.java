@@ -25,6 +25,7 @@ public class PaymentCleanupService {
     private final OrderRepository orderRepository;
     private final FileService fileService;
     private final OrderService orderService;
+    private final EmailService emailService;
 
     @Value("${app.payment.expiration-hours:24}")
     private int expirationHours;
@@ -90,8 +91,7 @@ public class PaymentCleanupService {
     }
 
     private void sendPaymentReminder(Order order) {
-        log.warn("EMAIL NOT CONFIGURED - Would send payment reminder for order {} to {}",
-                order.getOrderNumber(), order.getCustomerEmail());
+        emailService.sendPaymentReminder(order);
     }
 
     private List<String> parseJsonList(String json) {
