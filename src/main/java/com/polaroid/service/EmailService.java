@@ -24,7 +24,7 @@ public class EmailService {
     @Value("${app.support.email:payment@polaroidglossy.my}")
     private String supportEmail;
 
-    @Value("${app.support.whatsapp:011-23456789}")
+    @Value("${app.support.whatsapp:+60126620463}")
     private String supportWhatsApp;
 
     @Value("${app.payment.expiration-hours:24}")
