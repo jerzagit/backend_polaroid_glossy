@@ -38,6 +38,18 @@ spring:
     baseline-version: 2
     baseline-description: Existing production schema before Fly deployment
 
+  mail:
+    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
+    port: ${SPRING_MAIL_PORT:587}
+    username: ${SPRING_MAIL_USERNAME:}
+    password: ${SPRING_MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
+
 jwt:
   secret: ${JWT_SECRET}
   expiration: 86400000
@@ -56,19 +68,6 @@ toyyibpay:
   callback-url: ${TOYYIBPAY_CALLBACK_URL}
   fee-percentage: 2.5
   verify-callback: ${TOYYIBPAY_VERIFY_CALLBACK:true}
-
-spring:
-  mail:
-    host: ${SPRING_MAIL_HOST:smtp.gmail.com}
-    port: ${SPRING_MAIL_PORT:587}
-    username: ${SPRING_MAIL_USERNAME:}
-    password: ${SPRING_MAIL_PASSWORD:}
-    properties:
-      mail:
-        smtp:
-          auth: true
-          starttls:
-            enable: true
 
 app:
   setup-admin:
