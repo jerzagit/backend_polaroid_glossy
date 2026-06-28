@@ -67,4 +67,6 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
     long countByAffiliateId(UUID affiliateId);
     
     List<Order> findByPaymentStatusAndPaidAtBetween(PaymentStatus paymentStatus, LocalDateTime from, LocalDateTime to);
+
+    List<Order> findByPaymentStatusAndCreatedAtBefore(PaymentStatus paymentStatus, LocalDateTime createdAt);
 }
