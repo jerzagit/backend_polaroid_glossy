@@ -61,6 +61,9 @@ app:
   setup-admin:
     enabled: ${SETUP_ADMIN_ENABLED:false}
     secret: ${SETUP_ADMIN_SECRET:}
+  payment:
+    expiration-hours: ${PAYMENT_EXPIRATION_HOURS:24}
+    reminder-hours: ${PAYMENT_REMINDER_HOURS:14}
 
 cors:
   allowed-origins: ${CORS_ORIGINS}

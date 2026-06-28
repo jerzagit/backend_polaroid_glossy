@@ -237,6 +237,23 @@ public class OrderService {
     }
 
     @Transactional
+    public OrderResponse updatePaymentStatusForAdmin(UUID orderId, PaymentStatus status) {
+        Order order = orderRepository.findById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+
+        order.setPaymentStatus(status);
+        if (status == PaymentStatus.PAID) {
+            order.setPaidAt(LocalDateTime.now());
+            addStatusHistory(order, order.getStatus(), "Payment confirmed by admin");
+        }
+        if (status == PaymentStatus.FAILED) {
+            addStatusHistory(order, order.getStatus(), "Payment rejected by admin");
+        }
+
+        return orderMapper.toDto(orderRepository.save(order));
+    }
+
+    @Transactional
     public OrderResponse updatePaymentStatusForUser(String orderNumber, PaymentStatus status, String requesterEmail, String message) {
         Order order = getAuthorizedOrder(orderNumber, requesterEmail);
 
