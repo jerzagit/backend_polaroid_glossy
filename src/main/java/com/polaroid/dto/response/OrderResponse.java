@@ -27,6 +27,7 @@ public class OrderResponse {
     private String customerAddressLine1;
     private String customerAddressLine2;
     private String customerPostcode;
+    private String customerCity;
     private String customerState;
     private String customerCountry;
     private OrderStatus status;

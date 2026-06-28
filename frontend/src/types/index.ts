@@ -43,6 +43,7 @@ export interface Order {
   customerAddressLine1?: string;
   customerAddressLine2?: string;
   customerPostcode?: string;
+  customerCity?: string;
   customerState: string;
   customerCountry?: string;
   status: OrderStatus;

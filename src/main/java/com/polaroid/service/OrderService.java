@@ -88,6 +88,7 @@ public class OrderService {
                 .customerAddressLine1(request.getCustomerAddressLine1())
                 .customerAddressLine2(request.getCustomerAddressLine2())
                 .customerPostcode(request.getCustomerPostcode())
+                .customerCity(request.getCustomerCity())
                 .customerState(request.getCustomerState())
                 .customerCountry("Malaysia")
                 .notes(request.getNotes())

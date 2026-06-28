@@ -112,6 +112,7 @@
                         <td>
                             <div th:text="${order.customerName}">John Doe</div>
                             <small th:text="${order.customerEmail}">john@email.com</small>
+                            <small th:if="${order.customerCity}" class="grey-text text-darken-1" style="display: block;" th:text="${order.customerCity}">Shah Alam</small>
                         </td>
                         <td th:text="'RM ' + ${#numbers.formatDecimal(order.total, 1, 2)}">RM 10.00</td>
                         <td><span class="status-badge" th:classappend="${'status-' + order.status}" th:text="${order.status}">PENDING</span></td>
