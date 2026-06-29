@@ -38,6 +38,7 @@ public class OrderService {
     private final PrintSizeRepository printSizeRepository;
     private final UserRepository userRepository;
     private final OrderMapper orderMapper;
+    private final EmailService emailService;
     
     @Transactional
     public OrderResponse createOrder(OrderRequest request, String userEmail) {
@@ -105,6 +106,8 @@ public class OrderService {
         Order savedOrder = orderRepository.save(order);
         
         addStatusHistory(savedOrder, OrderStatus.PENDING, "Order created");
+
+        emailService.sendOrderConfirmation(savedOrder);
         
         return orderMapper.toDto(savedOrder);
     }
@@ -232,6 +235,7 @@ public class OrderService {
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
             addStatusHistory(order, order.getStatus(), "Payment received");
+            emailService.sendPaymentConfirmation(order);
         }
         
         orderRepository.save(order);
