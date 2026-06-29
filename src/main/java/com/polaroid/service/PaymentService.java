@@ -1,5 +1,7 @@
 package com.polaroid.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.Order;
 import com.polaroid.model.enums.PaymentStatus;
@@ -9,6 +11,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
+import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.RoundingMode;
@@ -26,6 +29,7 @@ public class PaymentService {
     
     private final OrderRepository orderRepository;
     private final RestTemplate restTemplate;
+    private final ObjectMapper objectMapper;
     
     @Value("${toyyibpay.secret-key}")
     private String toyyibpaySecretKey;
@@ -58,7 +62,7 @@ public class PaymentService {
         params.add("billPriceSetting", "1");
         params.add("billPayorInfo", "1");
         params.add("billAmount", String.valueOf(toCents(order.getTotal())));
-        params.add("billReturnUrl", returnUrl + "?order_id=" + order.getOrderNumber());
+        params.add("billReturnUrl", buildReturnUrl(order.getOrderNumber()));
         params.add("billCallbackUrl", callbackUrl);
         params.add("billExternalReferenceNo", order.getOrderNumber());
         params.add("billTo", order.getCustomerName());
@@ -92,20 +96,64 @@ public class PaymentService {
         }
         
         response = response.trim();
-        
-        if (response.startsWith("[")) {
-            response = response.substring(1);
-        }
-        if (response.endsWith("]")) {
-            response = response.substring(0, response.length() - 1);
+
+        String parsedBillCode = extractBillCodeFromJson(response);
+        if (parsedBillCode != null && !parsedBillCode.isBlank()) {
+            return parsedBillCode;
         }
         
         Matcher billCodeMatcher = BILL_CODE_PATTERN.matcher(response);
         if (billCodeMatcher.find()) {
             return billCodeMatcher.group(1).trim();
         }
-        
-        return response.replace("\"", "").trim();
+
+        String rawBillCode = response.replace("\"", "").trim();
+        if (!rawBillCode.matches("[A-Za-z0-9_-]{4,64}")) {
+            throw new RuntimeException("Unexpected response from ToyyibPay: " + summarizeGatewayResponse(response));
+        }
+
+        return rawBillCode;
+    }
+
+    private String extractBillCodeFromJson(String response) {
+        if (!response.startsWith("[") && !response.startsWith("{")) {
+            return null;
+        }
+
+        try {
+            JsonNode root = objectMapper.readTree(response);
+            JsonNode payload = root.isArray() && !root.isEmpty() ? root.get(0) : root;
+            JsonNode billCode = payload.get("BillCode");
+            if (billCode != null && !billCode.asText().isBlank()) {
+                return billCode.asText().trim();
+            }
+
+            JsonNode status = payload.get("status");
+            JsonNode message = payload.has("msg") ? payload.get("msg") : payload.get("message");
+            if (status != null || message != null) {
+                String detail = message != null && !message.asText().isBlank()
+                        ? message.asText()
+                        : status.asText();
+                throw new RuntimeException("ToyyibPay rejected payment bill: " + detail);
+            }
+        } catch (RuntimeException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new RuntimeException("Unable to parse ToyyibPay response: " + summarizeGatewayResponse(response));
+        }
+
+        throw new RuntimeException("ToyyibPay response did not include a BillCode");
+    }
+
+    private String buildReturnUrl(String orderNumber) {
+        return UriComponentsBuilder.fromUriString(returnUrl)
+                .queryParam("order_id", orderNumber)
+                .build()
+                .toUriString();
+    }
+
+    private String summarizeGatewayResponse(String response) {
+        return response.length() > 160 ? response.substring(0, 160) + "..." : response;
     }
     
     private String truncate(String str, int maxLength) {
@@ -136,7 +184,7 @@ public class PaymentService {
         return switch (normalizedStatus) {
             case "1", "success", "paid" -> PaymentStatus.PAID;
             case "2", "pending" -> PaymentStatus.PENDING;
-            case "3", "failed", "fail" -> PaymentStatus.FAILED;
+            case "0", "3", "failed", "fail" -> PaymentStatus.FAILED;
             default -> throw new IllegalArgumentException("Unknown ToyyibPay status");
         };
     }
