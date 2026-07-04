@@ -70,6 +70,7 @@ toyyibpay:
   verify-callback: ${TOYYIBPAY_VERIFY_CALLBACK:true}
 
 app:
+  frontend-url: ${FRONTEND_URL:https://polaroidglossy.my}
   setup-admin:
     enabled: ${SETUP_ADMIN_ENABLED:false}
     secret: ${SETUP_ADMIN_SECRET:}
