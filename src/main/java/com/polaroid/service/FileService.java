@@ -32,6 +32,7 @@ import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.Order;
 import com.polaroid.model.OrderItem;
 import com.polaroid.model.User;
+import com.polaroid.model.enums.OrderStatus;
 import com.polaroid.model.enums.Role;
 import com.polaroid.repository.OrderItemRepository;
 import com.polaroid.repository.OrderRepository;
@@ -75,13 +76,26 @@ public class FileService {
     @Transactional
     public Map<String, String> uploadFile(MultipartFile file, String orderId, String orderItemId, String userEmail) throws IOException {
         Order order = findAuthorizedOrder(orderId, userEmail);
+        return storeFile(file, order, orderItemId);
+    }
+
+    @Transactional
+    public Map<String, String> uploadFileForOrder(MultipartFile file, String orderId) throws IOException {
+        Order order = findOrder(orderId);
+        if (order.getStatus() == OrderStatus.CANCELLED) {
+            throw new BadRequestException("Cannot upload files to a cancelled order");
+        }
+        return storeFile(file, order, null);
+    }
+
+    private Map<String, String> storeFile(MultipartFile file, Order order, String orderItemId) throws IOException {
         byte[] processedImage = validateAndProcessImage(file);
 
         String format = detectImageFormat(processedImage);
         boolean isJpeg = "jpeg".equals(format);
         String extension = isJpeg ? "jpg" : "png";
         String fileName = UUID.randomUUID().toString() + "." + extension;
-        String folder = "orders/" + order.getId() + "/original";
+        String folder = "orders/" + order.getOrderNumber() + "/original";
         String key = folder + "/" + fileName;
         
         try {

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -22,13 +23,22 @@ public class FileController {
     private final FileService fileService;
     
     @PostMapping("/upload")
-    public ResponseEntity<Map<String, String>> uploadFile(
+    public ResponseEntity<Map<String, Object>> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("orderId") String orderId,
             @RequestParam(value = "orderItemId", required = false) String orderItemId,
             Authentication authentication) throws IOException {
-        
-        return ResponseEntity.ok(fileService.uploadFile(file, orderId, orderItemId, authentication.getName()));
+
+        Map<String, String> result;
+        if (authentication != null) {
+            result = fileService.uploadFile(file, orderId, orderItemId, authentication.getName());
+        } else {
+            result = fileService.uploadFileForOrder(file, orderId);
+        }
+
+        Map<String, Object> response = new HashMap<>(result);
+        response.put("success", true);
+        return ResponseEntity.ok(response);
     }
     
     @DeleteMapping
