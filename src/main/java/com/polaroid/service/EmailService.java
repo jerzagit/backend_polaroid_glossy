@@ -21,6 +21,9 @@ public class EmailService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
+    @Value("${app.email.from:no-reply@polaroidglossy.com}")
+    private String appFromEmail;
+
     @Value("${app.support.email:payment@polaroidglossy.my}")
     private String supportEmail;
 
@@ -30,6 +33,84 @@ public class EmailService {
     @Value("${app.payment.expiration-hours:24}")
     private int expirationHours;
 
+    public void sendOrderConfirmation(Order order) {
+        if (fromEmail == null || fromEmail.isBlank()) {
+            log.warn("Mail not configured - skipping confirmation for order {} to {}", order.getOrderNumber(), order.getCustomerEmail());
+            return;
+        }
+
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(appFromEmail);
+            message.setTo(order.getCustomerEmail());
+            message.setSubject("Order Confirmed / Pesanan Disahkan - " + order.getOrderNumber());
+
+            String total = "RM" + String.format("%.2f", order.getTotal());
+
+            message.setText(
+                "Dear " + order.getCustomerName() + ",\n\n"
+                + "Thank you for your order! Your order has been received and is being processed.\n\n"
+                + "Order Number: " + order.getOrderNumber() + "\n"
+                + "Total: " + total + "\n"
+                + "Payment Method: " + (order.getPaymentMethod() != null ? order.getPaymentMethod() : "Bank Transfer") + "\n\n"
+                + "You will receive another email once payment is confirmed.\n\n"
+                + "---\n\n"
+                + "Yth. " + order.getCustomerName() + ",\n\n"
+                + "Terima kasih atas pesanan anda! Pesanan anda telah diterima dan sedang diproses.\n\n"
+                + "Nombor Pesanan: " + order.getOrderNumber() + "\n"
+                + "Jumlah: " + total + "\n"
+                + "Kaedah Pembayaran: " + (order.getPaymentMethod() != null ? order.getPaymentMethod() : "Pemindahan Bank") + "\n\n"
+                + "Anda akan menerima e-mel selepas pembayaran disahkan.\n\n"
+                + "Terima kasih,\n"
+                + "Polaroid Glossy MY"
+            );
+
+            mailSender.send(message);
+            log.info("Order confirmation sent for {} to {}", order.getOrderNumber(), order.getCustomerEmail());
+        } catch (Exception e) {
+            log.error("Failed to send order confirmation for {}: {}", order.getOrderNumber(), e.getMessage());
+        }
+    }
+
+    public void sendPaymentConfirmation(Order order) {
+        if (fromEmail == null || fromEmail.isBlank()) {
+            log.warn("Mail not configured - skipping payment confirmation for order {} to {}", order.getOrderNumber(), order.getCustomerEmail());
+            return;
+        }
+
+        try {
+            SimpleMailMessage message = new SimpleMailMessage();
+            message.setFrom(appFromEmail);
+            message.setTo(order.getCustomerEmail());
+            message.setSubject("Payment Received / Pembayaran Diterima - " + order.getOrderNumber());
+
+            String total = "RM" + String.format("%.2f", order.getTotal());
+
+            message.setText(
+                "Dear " + order.getCustomerName() + ",\n\n"
+                + "Your payment has been received! We are now processing your order.\n\n"
+                + "Order Number: " + order.getOrderNumber() + "\n"
+                + "Amount Paid: " + total + "\n"
+                + "Shipping to: " + order.getCustomerAddressLine1() + ", " + order.getCustomerCity() + "\n\n"
+                + "You will receive a shipping notification once your order is on its way.\n\n"
+                + "---\n\n"
+                + "Yth. " + order.getCustomerName() + ",\n\n"
+                + "Pembayaran anda telah diterima! Kami sedang memproses pesanan anda.\n\n"
+                + "Nombor Pesanan: " + order.getOrderNumber() + "\n"
+                + "Jumlah Dibayar: " + total + "\n"
+                + "Dihantar ke: " + order.getCustomerAddressLine1() + ", " + order.getCustomerCity() + "\n\n"
+                + "Anda akan menerima notifikasi penghantaran selepas pesanan dihantar.\n\n"
+                + "Terima kasih,\n"
+                + "Polaroid Glossy MY"
+            );
+
+            mailSender.send(message);
+            log.info("Payment confirmation sent for {} to {}", order.getOrderNumber(), order.getCustomerEmail());
+        } catch (Exception e) {
+            log.error("Failed to send payment confirmation for {}: {}", order.getOrderNumber(), e.getMessage());
+        }
+    }
+
     public void sendPaymentReminder(Order order) {
         if (fromEmail == null || fromEmail.isBlank()) {
             log.warn("Mail not configured - skipping reminder for order {} to {}", order.getOrderNumber(), order.getCustomerEmail());
@@ -38,7 +119,7 @@ public class EmailService {
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
+            message.setFrom(appFromEmail);
             message.setTo(order.getCustomerEmail());
             message.setSubject("Payment Reminder / Peringatan Pembayaran - " + order.getOrderNumber());
 
