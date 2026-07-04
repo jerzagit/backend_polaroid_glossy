@@ -20,4 +20,5 @@ public class PrintSizeResponse {
     private BigDecimal price;
     private String description;
     private Boolean isActive;
+    private String tag;
 }

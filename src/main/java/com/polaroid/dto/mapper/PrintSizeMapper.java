@@ -20,6 +20,7 @@ public class PrintSizeMapper {
                 .price(dto.getPrice())
                 .description(dto.getDescription())
                 .isActive(dto.getIsActive())
+                .tag(dto.getTag())
                 .build();
     }
     
@@ -35,6 +36,7 @@ public class PrintSizeMapper {
                 .price(entity.getPrice())
                 .description(entity.getDescription())
                 .isActive(entity.getIsActive())
+                .tag(entity.getTag())
                 .build();
     }
 }
