@@ -5,11 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.RestTemplate;
-import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.awt.image.BufferedImage;
@@ -37,36 +34,19 @@ import com.polaroid.model.enums.Role;
 import com.polaroid.repository.OrderItemRepository;
 import com.polaroid.repository.OrderRepository;
 import com.polaroid.repository.UserRepository;
+import com.polaroid.storage.StorageService;
+import com.polaroid.storage.StorageFileInfo;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class FileService {
-    
-    private final WebClient supabaseWebClient;
-    private final RestTemplate restTemplate;
+
+    private final StorageService storageService;
     private final OrderRepository orderRepository;
     private final OrderItemRepository orderItemRepository;
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
-    
-    @Value("${supabase.url:https://placeholder.supabase.co}")
-    private String supabaseUrl;
-    
-    @Value("${supabase.key:placeholder-key}")
-    private String supabaseKey;
-    
-    @Value("${supabase.storage-bucket:polaroid-glossy}")
-    private String bucketName;
-    
-    @Value("${supabase.signed-url-expiration:3600}")
-    private int signedUrlExpiration;
-
-    @Value("${app.mock-storage.enabled:false}")
-    private boolean mockStorageEnabled;
-
-    @Value("${app.mock-storage.directory:.dev-storage}")
-    private String mockStorageDirectory;
 
     private static final long MAX_FILE_SIZE = 10 * 1024 * 1024L;
     private static final long MAX_DECODED_MEMORY = 100 * 1024 * 1024L;
@@ -101,27 +81,14 @@ public class FileService {
         String fileName = UUID.randomUUID().toString() + "." + extension;
         String folder = "orders/" + order.getOrderNumber() + "/original";
         String key = folder + "/" + fileName;
-        
+
         try {
-            String signedUrl;
-            if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
-                signedUrl = writeMockStorageFile(key, processedImage);
-            } else {
-                String uploadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
-
-                HttpHeaders headers = new HttpHeaders();
-                headers.setContentType(isJpeg ? MediaType.IMAGE_JPEG : MediaType.IMAGE_PNG);
-                headers.set("Authorization", "Bearer " + supabaseKey);
-                headers.set("x-upsert", "true");
-
-                HttpEntity<byte[]> requestEntity = new HttpEntity<>(processedImage, headers);
-
-                restTemplate.exchange(uploadUrl, HttpMethod.PUT, requestEntity, String.class);
-                signedUrl = createSignedUrl(key);
-            }
+            String contentType = isJpeg ? "image/jpeg" : "image/png";
+            storageService.upload(key, processedImage, contentType);
+            String signedUrl = storageService.getSignedUrl(key, 3600);
 
             persistUploadedFileKey(order, orderItemId, key);
-            
+
             Map<String, String> result = new HashMap<>();
             result.put("key", key);
             result.put("url", signedUrl);
@@ -129,34 +96,12 @@ public class FileService {
             if (orderItemId != null && !orderItemId.isBlank()) {
                 result.put("orderItemId", orderItemId);
             }
-            
+
             return result;
         } catch (Exception e) {
             log.error("Failed to upload file: {}", e.getMessage());
             throw new IOException("Failed to upload file: " + e.getMessage());
         }
-    }
-
-    private boolean isPlaceholderSupabaseConfig() {
-        return supabaseUrl == null
-                || supabaseKey == null
-                || supabaseUrl.contains("your-project")
-                || supabaseUrl.contains("placeholder")
-                || supabaseKey.startsWith("your-")
-                || supabaseKey.contains("placeholder");
-    }
-
-    private String writeMockStorageFile(String key, byte[] data) throws IOException {
-        Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
-        Path file = root.resolve(bucketName).resolve(key).normalize();
-        if (!file.startsWith(root)) {
-            throw new BadRequestException("Invalid storage key");
-        }
-
-        Files.createDirectories(file.getParent());
-        Files.write(file, data);
-        log.info("Mock storage upload saved: {}", file);
-        return file.toUri().toString();
     }
 
     private void persistUploadedFileKey(Order order, String orderItemId, String key) {
@@ -207,29 +152,22 @@ public class FileService {
             throw new IllegalStateException("Failed to update uploaded file metadata", e);
         }
     }
-    
+
     public void deleteFile(String key) throws IOException {
         try {
-            String deleteUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
-            
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", "Bearer " + supabaseKey);
-            
-            HttpEntity<?> requestEntity = new HttpEntity<>(headers);
-            
-            restTemplate.exchange(deleteUrl, HttpMethod.DELETE, requestEntity, String.class);
+            storageService.delete(key);
         } catch (Exception e) {
             log.error("Failed to delete file: {}", e.getMessage());
             throw new IOException("Failed to delete file: " + e.getMessage());
         }
     }
-    
+
     public byte[] downloadFiles(List<String> keys) throws IOException {
         ByteArrayOutputStream zipBuffer = new ByteArrayOutputStream();
         try (ZipOutputStream zipOutputStream = new ZipOutputStream(zipBuffer)) {
             for (String key : keys) {
                 try {
-                    byte[] fileBytes = loadFileBytes(key);
+                    byte[] fileBytes = storageService.download(key);
                     if (fileBytes.length == 0) {
                         continue;
                     }
@@ -247,40 +185,6 @@ public class FileService {
         return zipBuffer.toByteArray();
     }
 
-    private byte[] loadFileBytes(String key) throws IOException {
-        try {
-            if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
-                Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
-                Path file = root.resolve(bucketName).resolve(key).normalize();
-                if (!file.startsWith(root)) {
-                    throw new BadRequestException("Invalid storage key");
-                }
-                if (Files.exists(file)) {
-                    return Files.readAllBytes(file);
-                }
-                return new byte[0];
-            }
-
-            String downloadUrl = String.format("%s/storage/v1/object/%s/%s", supabaseUrl, bucketName, key);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", "Bearer " + supabaseKey);
-
-            HttpEntity<?> requestEntity = new HttpEntity<>(headers);
-
-            ResponseEntity<byte[]> response = restTemplate.exchange(
-                downloadUrl, HttpMethod.GET, requestEntity, byte[].class);
-
-            if (response.getBody() != null) {
-                return response.getBody();
-            }
-        } catch (Exception e) {
-            log.warn("Failed to download file {}: {}", key, e.getMessage());
-        }
-
-        return new byte[0];
-    }
-    
     public List<Map<String, String>> listFiles(String orderId, String userEmail) {
         Order order = findAuthorizedOrder(orderId, userEmail);
         return listFilesForOrder(order);
@@ -300,44 +204,26 @@ public class FileService {
                 Map<String, String> fileInfo = new HashMap<>();
                 fileInfo.put("name", fileNameFromKey(key));
                 fileInfo.put("key", key);
-                fileInfo.put("url", createSignedUrl(key));
+                fileInfo.put("url", storageService.getSignedUrl(key, 3600));
                 files.add(fileInfo);
             }
             return files;
         }
 
-        String folder = "orders/" + order.getId() + "/original";
-        
+        String prefix = "orders/" + order.getOrderNumber() + "/original";
         try {
-            String listUrl = String.format("%s/storage/v1/object/list/%s", supabaseUrl, bucketName);
-            
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", "Bearer " + supabaseKey);
-            
-            Map<String, Object> body = new HashMap<>();
-            body.put("prefix", folder);
-            body.put("limit", 100);
-            body.put("offset", 0);
-            
-            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-            
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> response = restTemplate.postForObject(listUrl, requestEntity, List.class);
-            
-            if (response != null) {
-                for (Map<String, Object> item : response) {
-                    Map<String, String> fileInfo = new HashMap<>();
-                    fileInfo.put("name", (String) item.get("name"));
-                    fileInfo.put("key", folder + "/" + item.get("name"));
-                    fileInfo.put("url", createSignedUrl(folder + "/" + item.get("name")));
-                    files.add(fileInfo);
-                }
+            List<StorageFileInfo> storageFiles = storageService.listFiles(prefix);
+            for (StorageFileInfo sf : storageFiles) {
+                Map<String, String> fileInfo = new HashMap<>();
+                fileInfo.put("name", sf.name());
+                fileInfo.put("key", sf.key());
+                fileInfo.put("url", sf.url());
+                files.add(fileInfo);
             }
         } catch (Exception e) {
-            log.warn("Failed to list files for {}: {}", folder, e.getMessage());
+            log.warn("Failed to list files for order {}: {}", order.getOrderNumber(), e.getMessage());
         }
-        
+
         return files;
     }
 
@@ -371,67 +257,9 @@ public class FileService {
         int index = key.lastIndexOf('/');
         return index >= 0 ? key.substring(index + 1) : key;
     }
-    
-    public String createSignedUrl(String key) {
-        try {
-            if (mockStorageEnabled || isPlaceholderSupabaseConfig()) {
-                Path root = Path.of(mockStorageDirectory).toAbsolutePath().normalize();
-                Path file = root.resolve(bucketName).resolve(key).normalize();
-                if (!file.startsWith(root)) {
-                    throw new BadRequestException("Invalid storage key");
-                }
-                return file.toUri().toString();
-            }
 
-            String signUrl = String.format("%s/storage/v1/object/sign/%s/%s", supabaseUrl, bucketName, key);
-
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.set("Authorization", "Bearer " + supabaseKey);
-
-            Map<String, Object> body = Map.of("expiresIn", signedUrlExpiration);
-            HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
-
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.postForObject(signUrl, requestEntity, Map.class);
-            if (response == null) {
-                throw new IllegalStateException("Empty signed URL response");
-            }
-
-            Object signedUrl = response.getOrDefault("signedURL", response.get("signedUrl"));
-            if (signedUrl == null) {
-                throw new IllegalStateException("Missing signed URL in response");
-            }
-
-            String url = signedUrl.toString();
-            if (url.startsWith("http")) return url;
-            return supabaseUrl + (url.startsWith("/storage") ? "" : "/storage/v1") + url;
-        } catch (Exception e) {
-            log.error("Failed to create signed URL for {}: {}", key, e.getMessage());
-            throw new IllegalStateException("Failed to create signed URL");
-        }
-    }
-    
     public long getStorageUsage() {
-        try {
-            String statsUrl = String.format("%s/storage/v1/bucket/%s", supabaseUrl, bucketName);
-            
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("Authorization", "Bearer " + supabaseKey);
-            
-            HttpEntity<?> requestEntity = new HttpEntity<>(headers);
-            
-            @SuppressWarnings("unchecked")
-            Map<String, Object> response = restTemplate.exchange(
-                statsUrl, HttpMethod.GET, requestEntity, Map.class).getBody();
-            
-            if (response != null && response.containsKey("files_count")) {
-                return ((Number) response.get("files_count")).longValue();
-            }
-        } catch (Exception e) {
-            log.warn("Failed to get storage usage: {}", e.getMessage());
-        }
-        return 0;
+        return storageService.getStorageUsage();
     }
 
     private byte[] validateAndProcessImage(MultipartFile file) {

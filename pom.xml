@@ -20,6 +20,7 @@
     <properties>
         <java.version>17</java.version>
         <jjwt.version>0.12.5</jjwt.version>
+        <aws-sdk.version>2.25.0</aws-sdk.version>
     </properties>
     
     <dependencies>
@@ -93,10 +94,11 @@
             <scope>runtime</scope>
         </dependency>
         
-        <!-- Supabase Storage - using REST API directly via Spring WebClient -->
+        <!-- Cloudflare R2 / S3-compatible storage -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-webflux</artifactId>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws-sdk.version}</version>
         </dependency>
         
         <dependency>

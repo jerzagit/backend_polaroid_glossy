@@ -142,7 +142,7 @@ class FileServiceSecurityTest {
 
     private byte[] processImage(MultipartFile file) {
         try {
-            FileService service = new FileService(null, null, null, null, null, new ObjectMapper());
+            FileService service = new FileService(null, null, null, null, new ObjectMapper());
             Method method = FileService.class.getDeclaredMethod("validateAndProcessImage", MultipartFile.class);
             method.setAccessible(true);
             return (byte[]) method.invoke(service, file);
@@ -158,7 +158,7 @@ class FileServiceSecurityTest {
 
     private String detectFormat(byte[] fileBytes) {
         try {
-            FileService service = new FileService(null, null, null, null, null, new ObjectMapper());
+            FileService service = new FileService(null, null, null, null, new ObjectMapper());
             Method method = FileService.class.getDeclaredMethod("detectImageFormat", byte[].class);
             method.setAccessible(true);
             return (String) method.invoke(service, fileBytes);

@@ -55,11 +55,21 @@ jwt:
   expiration: 86400000
   refresh-expiration: 604800000
 
-supabase:
-  url: ${SUPABASE_URL}
-  key: ${SUPABASE_KEY}
-  storage-bucket: polaroid-glossy
-  signed-url-expiration: ${SUPABASE_SIGNED_URL_EXPIRATION:3600}
+app:
+  frontend-url: ${FRONTEND_URL:https://polaroidglossy.my}
+  storage:
+    provider: ${STORAGE_PROVIDER:r2}
+    r2:
+      account-id: ${STORAGE_R2_ACCOUNT_ID}
+      api-token: ${STORAGE_R2_API_TOKEN}
+      bucket: ${STORAGE_R2_BUCKET:polaroid-glossy}
+      public-url: ${STORAGE_R2_PUBLIC_URL:}
+  setup-admin:
+    enabled: ${SETUP_ADMIN_ENABLED:false}
+    secret: ${SETUP_ADMIN_SECRET:}
+  payment:
+    expiration-hours: ${PAYMENT_EXPIRATION_HOURS:24}
+    reminder-hours: ${PAYMENT_REMINDER_HOURS:14}
 
 toyyibpay:
   secret-key: ${TOYYIBPAY_SECRET_KEY}
@@ -68,15 +78,6 @@ toyyibpay:
   callback-url: ${TOYYIBPAY_CALLBACK_URL}
   fee-percentage: 2.5
   verify-callback: ${TOYYIBPAY_VERIFY_CALLBACK:true}
-
-app:
-  frontend-url: ${FRONTEND_URL:https://polaroidglossy.my}
-  setup-admin:
-    enabled: ${SETUP_ADMIN_ENABLED:false}
-    secret: ${SETUP_ADMIN_SECRET:}
-  payment:
-    expiration-hours: ${PAYMENT_EXPIRATION_HOURS:24}
-    reminder-hours: ${PAYMENT_REMINDER_HOURS:14}
 
 cors:
   allowed-origins: ${CORS_ORIGINS}
