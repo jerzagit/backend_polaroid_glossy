@@ -1,6 +1,7 @@
 package com.polaroid.controller;
 
 import com.polaroid.service.FileService;
+import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -27,19 +28,33 @@ public class FileController {
             @RequestParam("file") MultipartFile file,
             @RequestParam("orderId") String orderId,
             @RequestParam(value = "customerEmail", required = false) String customerEmail,
+            @RequestParam(value = "uploadToken", required = false) String uploadToken,
             @RequestParam(value = "orderItemId", required = false) String orderItemId,
-            Authentication authentication) throws IOException {
+            Authentication authentication,
+            HttpServletRequest request) throws IOException {
 
         Map<String, String> result;
         if (authentication != null) {
             result = fileService.uploadFile(file, orderId, orderItemId, authentication.getName());
         } else {
-            result = fileService.uploadFileForOrder(file, orderId, customerEmail);
+            result = fileService.uploadFileForOrder(file, orderId, orderItemId, customerEmail, uploadToken, clientIp(request));
         }
 
         Map<String, Object> response = new HashMap<>(result);
         response.put("success", true);
         return ResponseEntity.ok(response);
+    }
+
+    private String clientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        String realIp = request.getHeader("X-Real-IP");
+        if (realIp != null && !realIp.isBlank()) {
+            return realIp.trim();
+        }
+        return request.getRemoteAddr();
     }
     
     @DeleteMapping

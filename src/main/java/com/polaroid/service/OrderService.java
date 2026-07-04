@@ -18,13 +18,18 @@ import com.polaroid.repository.PrintSizeRepository;
 import com.polaroid.repository.UserRepository;
 import com.polaroid.dto.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -40,6 +45,11 @@ public class OrderService {
     private final UserRepository userRepository;
     private final OrderMapper orderMapper;
     private final EmailService emailService;
+
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    @Value("${app.upload.token-expiration-hours:168}")
+    private int uploadTokenExpirationHours;
     
     @Transactional
     public OrderResponse createOrder(OrderRequest request, String userEmail) {
@@ -79,6 +89,8 @@ public class OrderService {
         
         BigDecimal shipping = shippingCost(request.getCustomerState());
 
+        String uploadToken = user == null ? generateUploadToken() : null;
+
         Order order = Order.builder()
                 .orderNumber(generateOrderNumber())
                 .userId(user != null ? user.getId() : null)
@@ -99,6 +111,8 @@ public class OrderService {
                 .subtotal(subtotal)
                 .shipping(shipping)
                 .total(subtotal.add(shipping))
+                .uploadTokenHash(uploadToken != null ? hashUploadToken(uploadToken) : null)
+                .uploadTokenExpiresAt(uploadToken != null ? LocalDateTime.now().plusHours(uploadTokenExpirationHours) : null)
                 .items(orderItems)
                 .build();
         
@@ -110,7 +124,9 @@ public class OrderService {
 
         emailService.sendOrderConfirmation(savedOrder);
         
-        return orderMapper.toDto(savedOrder);
+        OrderResponse response = orderMapper.toDto(savedOrder);
+        response.setUploadToken(uploadToken);
+        return response;
     }
     
     public OrderResponse getOrderByNumber(String orderNumber) {
@@ -285,6 +301,22 @@ public class OrderService {
         String timestamp = String.valueOf(System.currentTimeMillis()).substring(5);
         String random = UUID.randomUUID().toString().substring(0, 4).toUpperCase();
         return "PG" + timestamp + random;
+    }
+
+    private String generateUploadToken() {
+        byte[] bytes = new byte[32];
+        SECURE_RANDOM.nextBytes(bytes);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+    }
+
+    private String hashUploadToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to hash upload token", e);
+        }
     }
     
     private String formatJsonArray(List<String> list) {

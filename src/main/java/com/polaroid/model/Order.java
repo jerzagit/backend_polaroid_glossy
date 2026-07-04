@@ -111,6 +111,12 @@ public class Order extends Auditable {
     
     @Column(columnDefinition = "TEXT")
     private String notes;
+
+    @Column(name = "upload_token_hash")
+    private String uploadTokenHash;
+
+    @Column(name = "upload_token_expires_at")
+    private LocalDateTime uploadTokenExpiresAt;
     
     @OneToMany(mappedBy = "order", cascade = CascadeType.ALL, orphanRemoval = true)
     @Builder.Default

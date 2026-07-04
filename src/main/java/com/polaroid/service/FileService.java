@@ -11,10 +11,15 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.awt.image.BufferedImage;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 import javax.imageio.IIOImage;
@@ -30,6 +35,7 @@ import com.polaroid.model.Order;
 import com.polaroid.model.OrderItem;
 import com.polaroid.model.User;
 import com.polaroid.model.enums.OrderStatus;
+import com.polaroid.model.enums.PaymentStatus;
 import com.polaroid.model.enums.Role;
 import com.polaroid.repository.OrderItemRepository;
 import com.polaroid.repository.OrderRepository;
@@ -48,31 +54,39 @@ public class FileService {
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
 
-    private static final long MAX_FILE_SIZE = 10 * 1024 * 1024L;
+    private static final long MAX_FILE_SIZE = 25 * 1024 * 1024L;
     private static final long MAX_DECODED_MEMORY = 100 * 1024 * 1024L;
     private static final int MAX_IMAGE_DIMENSION = 10000;
-    private static final Set<String> ALLOWED_FORMATS = Set.of("jpeg", "png");
+    private static final Set<String> ALLOWED_FORMATS = Set.of("jpeg", "png", "webp");
+    private static final int MAX_ANONYMOUS_UPLOADS_PER_WINDOW = 10;
+    private static final Duration ANONYMOUS_UPLOAD_WINDOW = Duration.ofMinutes(10);
+
+    @Value("${app.upload.allow-pending-before-payment:false}")
+    private boolean allowPendingUploadBeforePayment;
+
+    @Value("${app.payment.expiration-hours:24}")
+    private int paymentExpirationHours;
+
+    private final Map<String, UploadWindow> anonymousUploadWindows = new ConcurrentHashMap<>();
 
     @Transactional
     public Map<String, String> uploadFile(MultipartFile file, String orderId, String orderItemId, String userEmail) throws IOException {
         Order order = findAuthorizedOrder(orderId, userEmail);
+        validateOrderAcceptsUpload(order);
         return storeFile(file, order, orderItemId);
     }
 
     @Transactional
-    public Map<String, String> uploadFileForOrder(MultipartFile file, String orderId, String customerEmail) throws IOException {
+    public Map<String, String> uploadFileForOrder(MultipartFile file, String orderId, String orderItemId, String customerEmail, String uploadToken, String clientIp) throws IOException {
         Order order = findOrder(orderId);
-        if (order.getStatus() == OrderStatus.CANCELLED) {
-            throw new BadRequestException("Cannot upload files to a cancelled order");
-        }
-        if (customerEmail == null || customerEmail.isBlank()
-                || !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
-            throw new ForbiddenException("Customer email does not match this order");
-        }
-        return storeFile(file, order, null);
+        validateAnonymousUploadAllowed(order, customerEmail, uploadToken, clientIp);
+        return storeFile(file, order, orderItemId);
     }
 
     private Map<String, String> storeFile(MultipartFile file, Order order, String orderItemId) throws IOException {
+        OrderItem item = resolveOrderItemForUpdate(order, orderItemId);
+        enforceUploadCapacity(item);
+
         byte[] processedImage = validateAndProcessImage(file);
 
         String format = detectImageFormat(processedImage);
@@ -87,7 +101,8 @@ public class FileService {
             storageService.upload(key, processedImage, contentType);
             String signedUrl = storageService.getSignedUrl(key, 3600);
 
-            persistUploadedFileKey(order, orderItemId, key);
+            persistUploadedFileKey(item, key);
+            invalidateUploadTokenIfComplete(order);
 
             Map<String, String> result = new HashMap<>();
             result.put("key", key);
@@ -104,14 +119,13 @@ public class FileService {
         }
     }
 
-    private void persistUploadedFileKey(Order order, String orderItemId, String key) {
-        OrderItem item = resolveOrderItem(order, orderItemId);
+    private void persistUploadedFileKey(OrderItem item, String key) {
         item.setImages(appendJsonString(item.getImages(), key));
         item.setS3Keys(appendJsonString(item.getS3Keys(), key));
         orderItemRepository.save(item);
     }
 
-    private OrderItem resolveOrderItem(Order order, String orderItemId) {
+    private OrderItem resolveOrderItemForUpdate(Order order, String orderItemId) {
         if (orderItemId != null && !orderItemId.isBlank()) {
             UUID itemId;
             try {
@@ -120,16 +134,126 @@ public class FileService {
                 throw new BadRequestException("Invalid order item ID");
             }
 
-            return orderItemRepository.findByOrderIdAndId(order.getId(), itemId)
+            return orderItemRepository.findByOrderIdAndIdForUpdate(order.getId(), itemId)
                     .orElseThrow(() -> new ResourceNotFoundException("Order item not found"));
         }
 
-        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
+        List<OrderItem> items = orderItemRepository.findByOrderIdForUpdate(order.getId());
         if (items.size() == 1) {
             return items.get(0);
         }
 
         throw new BadRequestException("orderItemId is required when an order has multiple items");
+    }
+
+    private void enforceUploadCapacity(OrderItem item) {
+        int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+        if (quantity <= 0) {
+            throw new BadRequestException("Order item does not allow image uploads");
+        }
+
+        int uploadedCount = readJsonStringList(item.getS3Keys()).size();
+        if (uploadedCount >= quantity) {
+            throw new BadRequestException("Upload limit reached for this order item");
+        }
+    }
+
+    private void validateAnonymousUploadAllowed(Order order, String customerEmail, String uploadToken, String clientIp) {
+        validateOrderAcceptsUpload(order);
+        if (order.getPaymentStatus() != PaymentStatus.PAID) {
+            if (!allowPendingUploadBeforePayment) {
+                throw new ForbiddenException("Payment must be completed before uploading files");
+            }
+            if (order.getCreatedAt() != null
+                    && order.getCreatedAt().isBefore(LocalDateTime.now().minusHours(paymentExpirationHours))) {
+                throw new BadRequestException("Upload window has expired for this unpaid order");
+            }
+        }
+        if (customerEmail == null || customerEmail.isBlank()
+                || !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
+            throw new ForbiddenException("Customer email does not match this order");
+        }
+        validateGuestUploadToken(order, uploadToken);
+
+        enforceAnonymousUploadRateLimit(order, clientIp);
+    }
+
+    private void validateGuestUploadToken(Order order, String uploadToken) {
+        if (order.getUploadTokenHash() == null || order.getUploadTokenHash().isBlank()) {
+            return;
+        }
+        if (uploadToken == null || uploadToken.isBlank()) {
+            throw new ForbiddenException("Upload token is required for this order");
+        }
+        if (order.getUploadTokenExpiresAt() != null && order.getUploadTokenExpiresAt().isBefore(LocalDateTime.now())) {
+            throw new ForbiddenException("Upload token has expired");
+        }
+        if (!MessageDigest.isEqual(
+                hashUploadToken(uploadToken).getBytes(StandardCharsets.UTF_8),
+                order.getUploadTokenHash().getBytes(StandardCharsets.UTF_8))) {
+            throw new ForbiddenException("Invalid upload token");
+        }
+    }
+
+    private void validateOrderAcceptsUpload(Order order) {
+        if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.REFUNDED) {
+            throw new BadRequestException("Cannot upload files to a closed order");
+        }
+        if (order.getStatus() == OrderStatus.POSTED
+                || order.getStatus() == OrderStatus.ON_DELIVERY
+                || order.getStatus() == OrderStatus.DELIVERED) {
+            throw new BadRequestException("Cannot upload files after an order has been dispatched");
+        }
+        if (order.getPaymentStatus() == PaymentStatus.FAILED) {
+            throw new BadRequestException("Cannot upload files to an order with failed payment");
+        }
+    }
+
+    private void enforceAnonymousUploadRateLimit(Order order, String clientIp) {
+        String normalizedIp = clientIp == null || clientIp.isBlank() ? "unknown" : clientIp.trim();
+        String key = normalizedIp + ":" + order.getOrderNumber();
+        LocalDateTime now = LocalDateTime.now();
+        UploadWindow window = anonymousUploadWindows.computeIfAbsent(key, ignored -> new UploadWindow(now));
+
+        synchronized (window) {
+            if (window.windowStartedAt.plus(ANONYMOUS_UPLOAD_WINDOW).isBefore(now)) {
+                window.windowStartedAt = now;
+                window.count = 0;
+            }
+            if (window.count >= MAX_ANONYMOUS_UPLOADS_PER_WINDOW) {
+                throw new BadRequestException("Too many upload attempts. Please try again later");
+            }
+            window.count++;
+        }
+
+        if (anonymousUploadWindows.size() > 10_000) {
+            anonymousUploadWindows.entrySet().removeIf(entry ->
+                    entry.getValue().windowStartedAt.plus(ANONYMOUS_UPLOAD_WINDOW).isBefore(now));
+        }
+    }
+
+    private void invalidateUploadTokenIfComplete(Order order) {
+        List<OrderItem> items = orderItemRepository.findByOrderIdForUpdate(order.getId());
+        boolean complete = !items.isEmpty() && items.stream().allMatch(item -> {
+            int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
+            return quantity > 0 && readJsonStringList(item.getS3Keys()).size() >= quantity;
+        });
+
+        if (complete && order.getUploadTokenHash() != null) {
+            order.setUploadTokenHash(null);
+            order.setUploadTokenExpiresAt(null);
+            orderRepository.save(order);
+        }
+    }
+
+    private String hashUploadToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            return Base64.getEncoder().encodeToString(hash);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to hash upload token", e);
+        }
     }
 
     private String appendJsonString(String json, String value) {
@@ -268,7 +392,7 @@ public class FileService {
         }
 
         if (file.getSize() > MAX_FILE_SIZE) {
-            throw new BadRequestException("File exceeds 10MB limit");
+            throw new BadRequestException("File exceeds 25MB limit");
         }
 
         byte[] fileBytes;
@@ -281,7 +405,7 @@ public class FileService {
         String detectedFormat = detectImageFormat(fileBytes);
         if (detectedFormat == null || !ALLOWED_FORMATS.contains(detectedFormat)) {
             throw new BadRequestException(
-                "Invalid image file: only JPEG and PNG are allowed (magic bytes mismatch)");
+                "Invalid image file: only JPEG, PNG, and WEBP are allowed (magic bytes mismatch)");
         }
 
         BufferedImage image;
@@ -310,10 +434,16 @@ public class FileService {
         }
 
         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-        String formatName = "jpeg".equals(detectedFormat) ? "jpg" : detectedFormat;
+        String formatName = reencodeFormatName(detectedFormat, image);
 
-        ImageWriter writer = ImageIO.getImageWritersByFormatName(formatName).next();
+        Iterator<ImageWriter> writers = ImageIO.getImageWritersByFormatName(formatName);
+        if (!writers.hasNext()) {
+            throw new BadRequestException("No image encoder is available for " + formatName);
+        }
+
+        ImageWriter writer = writers.next();
         try {
+            BufferedImage outputImage = "jpg".equals(formatName) ? withoutAlpha(image) : image;
             ImageWriteParam param = writer.getDefaultWriteParam();
             if (param.canWriteCompressed()) {
                 param.setCompressionMode(ImageWriteParam.MODE_EXPLICIT);
@@ -321,7 +451,7 @@ public class FileService {
             }
             try (ImageOutputStream ios = ImageIO.createImageOutputStream(baos)) {
                 writer.setOutput(ios);
-                writer.write(null, new IIOImage(image, null, null), param);
+                writer.write(null, new IIOImage(outputImage, null, null), param);
             }
         } catch (IOException e) {
             throw new BadRequestException("Failed to re-encode image: " + e.getMessage());
@@ -330,6 +460,32 @@ public class FileService {
         }
 
         return baos.toByteArray();
+    }
+
+    private String reencodeFormatName(String detectedFormat, BufferedImage image) {
+        if ("png".equals(detectedFormat) || hasAlpha(image)) {
+            return "png";
+        }
+        return "jpg";
+    }
+
+    private boolean hasAlpha(BufferedImage image) {
+        return image.getColorModel() != null && image.getColorModel().hasAlpha();
+    }
+
+    private BufferedImage withoutAlpha(BufferedImage image) {
+        if (!hasAlpha(image) && image.getType() == BufferedImage.TYPE_INT_RGB) {
+            return image;
+        }
+
+        BufferedImage rgbImage = new BufferedImage(image.getWidth(), image.getHeight(), BufferedImage.TYPE_INT_RGB);
+        java.awt.Graphics2D graphics = rgbImage.createGraphics();
+        try {
+            graphics.drawImage(image, 0, 0, java.awt.Color.WHITE, null);
+        } finally {
+            graphics.dispose();
+        }
+        return rgbImage;
     }
 
     private String detectImageFormat(byte[] fileBytes) {
@@ -350,6 +506,17 @@ public class FileService {
                 && fileBytes[6] == 0x1A
                 && fileBytes[7] == 0x0A) {
             return "png";
+        }
+
+        if (fileBytes[0] == 0x52
+                && fileBytes[1] == 0x49
+                && fileBytes[2] == 0x46
+                && fileBytes[3] == 0x46
+                && fileBytes[8] == 0x57
+                && fileBytes[9] == 0x45
+                && fileBytes[10] == 0x42
+                && fileBytes[11] == 0x50) {
+            return "webp";
         }
 
         return null;
@@ -379,5 +546,14 @@ public class FileService {
 
     private boolean isStaff(Role role) {
         return role == Role.ADMIN || role == Role.MARKETING || role == Role.PACKER;
+    }
+
+    private static class UploadWindow {
+        private LocalDateTime windowStartedAt;
+        private int count;
+
+        private UploadWindow(LocalDateTime windowStartedAt) {
+            this.windowStartedAt = windowStartedAt;
+        }
     }
 }
