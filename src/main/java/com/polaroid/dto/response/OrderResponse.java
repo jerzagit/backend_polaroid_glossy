@@ -44,6 +44,7 @@ public class OrderResponse {
     private LocalDateTime cancelledAt;
     private String cancelReason;
     private String notes;
+    private String uploadToken;
     private List<OrderItemResponse> items;
     private List<StatusHistoryResponse> statusHistory;
     private LocalDateTime createdAt;

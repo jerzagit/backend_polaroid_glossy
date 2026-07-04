@@ -119,6 +119,30 @@ class FileServiceSecurityTest {
     }
 
     @Test
+    void validateAndProcessImage_bogusWebpWithValidHeader_rejected() {
+        byte[] webpHeader = new byte[]{
+                0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00,
+                0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20
+        };
+        byte[] garbage = new byte[1000];
+        byte[] fakeWebp = new byte[webpHeader.length + garbage.length];
+        System.arraycopy(webpHeader, 0, fakeWebp, 0, webpHeader.length);
+        System.arraycopy(garbage, 0, fakeWebp, webpHeader.length, garbage.length);
+
+        MultipartFile file = new MockMultipartFile("file", "fake.webp", "image/webp", fakeWebp);
+        BadRequestException ex = assertThrows(BadRequestException.class, () -> processImage(file));
+        assertTrue(ex.getMessage().toLowerCase().contains("decode"));
+    }
+
+    @Test
+    void validateAndProcessImage_exceedsTwentyFiveMb_rejected() {
+        byte[] bytes = new byte[25 * 1024 * 1024 + 1];
+        MultipartFile file = new MockMultipartFile("file", "large.jpg", "image/jpeg", bytes);
+        BadRequestException ex = assertThrows(BadRequestException.class, () -> processImage(file));
+        assertTrue(ex.getMessage().contains("25MB"));
+    }
+
+    @Test
     void detectFormat_jpegHeader() throws Exception {
         byte[] jpegBytes = createJpeg(100, 100);
         String format = detectFormat(jpegBytes);
@@ -132,6 +156,15 @@ class FileServiceSecurityTest {
         ImageIO.write(img, "png", baos);
         String format = detectFormat(baos.toByteArray());
         assertEquals("png", format);
+    }
+
+    @Test
+    void detectFormat_webpHeader() {
+        byte[] webpHeader = new byte[]{
+                0x52, 0x49, 0x46, 0x46, 0x24, 0x00, 0x00, 0x00,
+                0x57, 0x45, 0x42, 0x50
+        };
+        assertEquals("webp", detectFormat(webpHeader));
     }
 
     @Test
