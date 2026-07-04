@@ -141,7 +141,7 @@ public class EmailService {
             + intro + "\n\n"
             + receiptBodyMy(order, orderUrl) + "\n"
             + footer + "\n\n"
-            "Semak pesanan anda: " + orderUrl + "\n\n"
+            + "Semak pesanan anda: " + orderUrl + "\n\n"
             + "Terima kasih,\n"
             + "Polaroid Glossy MY\n";
     }
