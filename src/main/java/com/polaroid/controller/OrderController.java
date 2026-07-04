@@ -1,6 +1,7 @@
 package com.polaroid.controller;
 
 import com.polaroid.dto.request.OrderRequest;
+import com.polaroid.dto.request.UpdateOrderRequest;
 import com.polaroid.dto.response.OrderResponse;
 import com.polaroid.model.enums.PaymentStatus;
 import com.polaroid.service.OrderService;
@@ -17,7 +18,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/orders")
@@ -36,6 +39,52 @@ public class OrderController {
             Authentication authentication) {
         String userEmail = authentication != null ? authentication.getName() : null;
         return ResponseEntity.ok(orderService.createOrder(request, userEmail));
+    }
+
+    @GetMapping
+    public ResponseEntity<?> getOrders(
+            @RequestParam(required = false) String userId,
+            @RequestParam(required = false) String orderNumber,
+            Authentication authentication) {
+        if (orderNumber != null && !orderNumber.isBlank()) {
+            OrderResponse order = orderService.getOrderByNumber(orderNumber, authentication != null ? authentication.getName() : null, null);
+            return ResponseEntity.ok(Map.of("success", true, "orders", List.of(order)));
+        }
+        if (userId != null && !userId.isBlank()) {
+            List<OrderResponse> orders = orderService.getOrdersByUserId(UUID.fromString(userId));
+            return ResponseEntity.ok(Map.of("success", true, "orders", orders));
+        }
+        if (authentication != null) {
+            Page<OrderResponse> orders = orderService.getUserOrders(authentication.getName(), PageRequest.of(0, 100));
+            return ResponseEntity.ok(Map.of("success", true, "orders", orders.getContent()));
+        }
+        return ResponseEntity.badRequest().body(Map.of("success", false, "error", "userId, orderNumber, or authentication required"));
+    }
+
+    @PutMapping
+    public ResponseEntity<?> updateOrder(
+            @RequestBody UpdateOrderRequest request,
+            Authentication authentication) {
+        if (authentication == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("success", false, "error", "Authentication required"));
+        }
+        String orderNumber = request.getOrderNumber();
+        if (orderNumber == null || orderNumber.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "error", "orderNumber is required"));
+        }
+        OrderResponse order = orderService.updateOrder(orderNumber, request, authentication.getName());
+        return ResponseEntity.ok(Map.of("success", true, "order", order));
+    }
+
+    @DeleteMapping
+    public ResponseEntity<?> cancelOrder(
+            @RequestParam String orderId,
+            Authentication authentication) {
+        if (authentication == null) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("success", false, "error", "Authentication required"));
+        }
+        OrderResponse order = orderService.cancelOrder(orderId, authentication.getName());
+        return ResponseEntity.ok(Map.of("success", true, "message", "Order cancelled", "order", order));
     }
 
     @GetMapping("/payment-return")

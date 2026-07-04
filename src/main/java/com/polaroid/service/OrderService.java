@@ -1,6 +1,7 @@
 package com.polaroid.service;
 
 import com.polaroid.dto.request.OrderRequest;
+import com.polaroid.dto.request.UpdateOrderRequest;
 import com.polaroid.dto.response.OrderResponse;
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
@@ -323,6 +324,86 @@ public class OrderService {
         }
 
         return digits.isBlank() ? null : digits;
+    }
+
+    public List<OrderResponse> getOrdersByUserId(UUID userId) {
+        return orderRepository.findByUserId(userId, Pageable.unpaged()).stream()
+                .map(orderMapper::toDto)
+                .toList();
+    }
+
+    @Transactional
+    public OrderResponse updateOrder(String orderNumber, UpdateOrderRequest request, String userEmail) {
+        Order order = getAuthorizedOrder(orderNumber, userEmail);
+
+        if (request.getCustomerName() != null) order.setCustomerName(request.getCustomerName());
+        if (request.getCustomerEmail() != null) order.setCustomerEmail(request.getCustomerEmail());
+        if (request.getCustomerPhone() != null) order.setCustomerPhone(normalizeMalaysiaPhone(request.getCustomerPhone()));
+        if (request.getCustomerHouseUnitNo() != null) order.setCustomerHouseUnitNo(request.getCustomerHouseUnitNo());
+        if (request.getCustomerAddressLine1() != null) order.setCustomerAddressLine1(request.getCustomerAddressLine1());
+        if (request.getCustomerAddressLine2() != null) order.setCustomerAddressLine2(request.getCustomerAddressLine2());
+        if (request.getCustomerPostcode() != null) order.setCustomerPostcode(request.getCustomerPostcode());
+        if (request.getCustomerCity() != null) order.setCustomerCity(request.getCustomerCity());
+        if (request.getCustomerState() != null) order.setCustomerState(request.getCustomerState());
+        if (request.getNotes() != null) order.setNotes(request.getNotes());
+
+        if (request.getItems() != null && !request.getItems().isEmpty()) {
+            order.getItems().clear();
+            List<OrderItem> newItems = new ArrayList<>();
+            for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
+                PrintSize printSize = printSizeRepository.findById(itemReq.getSizeId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + itemReq.getSizeId()));
+                BigDecimal itemTotal = printSize.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
+                OrderItem item = OrderItem.builder()
+                        .sizeId(printSize.getId())
+                        .sizeName(printSize.getDisplayName())
+                        .quantity(itemReq.getQuantity())
+                        .unitPrice(printSize.getPrice())
+                        .totalPrice(itemTotal)
+                        .images(formatJsonArray(itemReq.getImageUrls()))
+                        .s3Keys(formatJsonArray(itemReq.getImageUrls()))
+                        .customTexts(formatJsonArray(itemReq.getCustomTexts()))
+                        .build();
+                newItems.add(item);
+            }
+            newItems.forEach(item -> item.setOrder(order));
+            order.setItems(newItems);
+            BigDecimal subtotal = newItems.stream()
+                    .map(OrderItem::getTotalPrice)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            order.setSubtotal(subtotal);
+            order.setShipping(shippingCost(order.getCustomerState()));
+            order.setTotal(subtotal.add(order.getShipping()));
+        }
+
+        return orderMapper.toDto(orderRepository.save(order));
+    }
+
+    @Transactional
+    public OrderResponse cancelOrder(String orderNumberOrId, String userEmail) {
+        Order order = null;
+        try {
+            UUID uuid = UUID.fromString(orderNumberOrId);
+            order = orderRepository.findById(uuid).orElse(null);
+        } catch (IllegalArgumentException ignored) {}
+        if (order == null) {
+            order = orderRepository.findByOrderNumber(orderNumberOrId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderNumberOrId));
+        }
+
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+
+        if (!isStaff(user.getRole()) && (order.getUserId() == null || !order.getUserId().equals(user.getId()))) {
+            throw new ForbiddenException("Not authorized to cancel this order");
+        }
+
+        order.setStatus(OrderStatus.CANCELLED);
+        order.setCancelledAt(LocalDateTime.now());
+        order.setCancelReason("Cancelled by customer");
+        addStatusHistory(order, OrderStatus.CANCELLED, "Order cancelled by customer");
+
+        return orderMapper.toDto(orderRepository.save(order));
     }
 
     public Order getAuthorizedOrder(String orderNumber, String requesterEmail) {
