@@ -1,8 +1,10 @@
 package com.polaroid.config;
 
 import com.polaroid.model.PrintSize;
+import com.polaroid.model.Review;
 import com.polaroid.model.Testimonial;
 import com.polaroid.repository.PrintSizeRepository;
+import com.polaroid.repository.ReviewRepository;
 import com.polaroid.repository.TestimonialRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.CommandLineRunner;
@@ -18,6 +20,7 @@ public class SeedDataConfig {
 
     private final PrintSizeRepository printSizeRepository;
     private final TestimonialRepository testimonialRepository;
+    private final ReviewRepository reviewRepository;
 
     @Bean
     CommandLineRunner seedPrintSizes() {
@@ -51,7 +54,23 @@ public class SeedDataConfig {
         };
     }
 
-    private PrintSize printSize(String id, String name, String displayName, String width, String height, String price, String description) {
+    @Bean
+    CommandLineRunner seedReviews() {
+        return args -> {
+            if (reviewRepository.count() > 0) {
+                return;
+            }
+
+            reviewRepository.saveAll(List.of(
+                    review(5, "Amazing quality!", "The print quality is incredible. Colors are vibrant and the paper feels premium. Will definitely order again!"),
+                    review(5, "Perfect for gifts", "Ordered these as anniversary gifts. The customization options made them extra special. Fast delivery too!"),
+                    review(5, "Beautiful memories", "My grandma cried when she saw the photos. The A4 poster size is stunning. Thank you for the quality!"),
+                    review(4, "Great for parties", "Ordered 50 prints for my daughter's birthday. Everyone loved taking home instant photos. Quick turnaround!")
+            ));
+        };
+    }
+
+    private PrintSize printSize(String id, String name, String displayName, String width, String height, String price, String description, String tag) {
         return PrintSize.builder()
                 .id(id)
                 .name(name)
@@ -77,6 +96,14 @@ public class SeedDataConfig {
                 .rating(rating)
                 .sortOrder(sortOrder)
                 .isActive(true)
+                .build();
+    }
+
+    private Review review(int rating, String title, String comment) {
+        return Review.builder()
+                .rating(rating)
+                .title(title)
+                .comment(comment)
                 .build();
     }
 }
