@@ -2,7 +2,7 @@ ALTER TABLE print_sizes
     ADD COLUMN IF NOT EXISTS tag VARCHAR(255);
 
 CREATE TABLE IF NOT EXISTS testimonials (
-    id          SERIAL PRIMARY KEY,
+    id          BIGSERIAL PRIMARY KEY,
     name        VARCHAR(255) NOT NULL,
     location    VARCHAR(255) NOT NULL,
     text        TEXT NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS testimonials (
 );
 
 CREATE TABLE IF NOT EXISTS reviews (
-    id          SERIAL PRIMARY KEY,
+    id          BIGSERIAL PRIMARY KEY,
     user_id     UUID,
     order_id    UUID,
     size_id     VARCHAR(255),
