@@ -21,6 +21,9 @@ public class EmailService {
     @Value("${spring.mail.username}")
     private String fromEmail;
 
+    @Value("${app.email.from:no-reply@polaroidglossy.com}")
+    private String appFromEmail;
+
     @Value("${app.support.email:payment@polaroidglossy.my}")
     private String supportEmail;
 
@@ -38,7 +41,7 @@ public class EmailService {
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
+            message.setFrom(appFromEmail);
             message.setTo(order.getCustomerEmail());
             message.setSubject("Order Confirmed / Pesanan Disahkan - " + order.getOrderNumber());
 
@@ -77,7 +80,7 @@ public class EmailService {
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
+            message.setFrom(appFromEmail);
             message.setTo(order.getCustomerEmail());
             message.setSubject("Payment Received / Pembayaran Diterima - " + order.getOrderNumber());
 
@@ -116,7 +119,7 @@ public class EmailService {
 
         try {
             SimpleMailMessage message = new SimpleMailMessage();
-            message.setFrom(fromEmail);
+            message.setFrom(appFromEmail);
             message.setTo(order.getCustomerEmail());
             message.setSubject("Payment Reminder / Peringatan Pembayaran - " + order.getOrderNumber());
 
