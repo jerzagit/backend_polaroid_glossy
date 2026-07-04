@@ -2,9 +2,7 @@ package com.polaroid.controller;
 
 import com.polaroid.service.PaymentService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
@@ -17,22 +15,17 @@ public class ToyyibpayController {
     private final PaymentService paymentService;
 
     @PostMapping("/create-bill")
-    public ResponseEntity<?> createBill(
-            @RequestBody Map<String, String> request,
-            Authentication authentication) {
-        if (authentication == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
-                    .body(Map.of("success", false, "error", "Authentication required"));
-        }
-
+    public ResponseEntity<?> createBill(@RequestBody Map<String, String> request) {
         String orderNumber = request.get("orderNumber");
+        String customerEmail = request.get("customerEmail");
+
         if (orderNumber == null || orderNumber.isBlank()) {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "error", "orderNumber is required"));
         }
 
         try {
-            Map<String, String> payment = paymentService.createPayment(orderNumber, authentication.getName());
+            Map<String, String> payment = paymentService.createPaymentForOrder(orderNumber, customerEmail);
             payment.put("success", "true");
             return ResponseEntity.ok(payment);
         } catch (Exception e) {

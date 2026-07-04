@@ -46,6 +46,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/orders").permitAll()
                 .requestMatchers("/api/orders/{orderNumber}").permitAll()
                 .requestMatchers("/api/webhooks/**").permitAll()
+                .requestMatchers(HttpMethod.POST, "/api/toyyibpay/create-bill").permitAll()
                 .requestMatchers("/api/auth/google").permitAll()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/error").permitAll()

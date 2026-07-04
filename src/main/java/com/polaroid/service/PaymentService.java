@@ -2,6 +2,7 @@ package com.polaroid.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.polaroid.exception.ForbiddenException;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.Order;
 import com.polaroid.model.enums.PaymentStatus;
@@ -53,7 +54,22 @@ public class PaymentService {
 
     public Map<String, String> createPayment(String orderNumber, String userEmail) {
         Order order = orderService.getAuthorizedOrder(orderNumber, userEmail);
+        return billOrder(order, orderNumber);
+    }
 
+    public Map<String, String> createPaymentForOrder(String orderNumber, String customerEmail) {
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderNumber));
+
+        if (customerEmail != null && !customerEmail.isBlank()
+                && !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
+            throw new ForbiddenException("Customer email does not match order");
+        }
+
+        return billOrder(order, orderNumber);
+    }
+
+    private Map<String, String> billOrder(Order order, String orderNumber) {
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("userSecretKey", toyyibpaySecretKey);
         params.add("categoryCode", categoryCode);
