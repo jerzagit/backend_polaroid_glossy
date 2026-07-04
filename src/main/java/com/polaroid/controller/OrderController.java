@@ -34,11 +34,12 @@ public class OrderController {
     private boolean mockPaymentsEnabled;
     
     @PostMapping
-    public ResponseEntity<OrderResponse> createOrder(
+    public ResponseEntity<Map<String, Object>> createOrder(
             @Valid @RequestBody OrderRequest request,
             Authentication authentication) {
         String userEmail = authentication != null ? authentication.getName() : null;
-        return ResponseEntity.ok(orderService.createOrder(request, userEmail));
+        OrderResponse order = orderService.createOrder(request, userEmail);
+        return ResponseEntity.ok(Map.of("success", true, "order", order));
     }
 
     @GetMapping
