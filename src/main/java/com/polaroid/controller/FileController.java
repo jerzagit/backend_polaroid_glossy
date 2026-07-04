@@ -26,6 +26,7 @@ public class FileController {
     public ResponseEntity<Map<String, Object>> uploadFile(
             @RequestParam("file") MultipartFile file,
             @RequestParam("orderId") String orderId,
+            @RequestParam(value = "customerEmail", required = false) String customerEmail,
             @RequestParam(value = "orderItemId", required = false) String orderItemId,
             Authentication authentication) throws IOException {
 
@@ -33,7 +34,7 @@ public class FileController {
         if (authentication != null) {
             result = fileService.uploadFile(file, orderId, orderItemId, authentication.getName());
         } else {
-            result = fileService.uploadFileForOrder(file, orderId);
+            result = fileService.uploadFileForOrder(file, orderId, customerEmail);
         }
 
         Map<String, Object> response = new HashMap<>(result);

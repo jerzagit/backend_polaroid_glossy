@@ -80,10 +80,14 @@ public class FileService {
     }
 
     @Transactional
-    public Map<String, String> uploadFileForOrder(MultipartFile file, String orderId) throws IOException {
+    public Map<String, String> uploadFileForOrder(MultipartFile file, String orderId, String customerEmail) throws IOException {
         Order order = findOrder(orderId);
         if (order.getStatus() == OrderStatus.CANCELLED) {
             throw new BadRequestException("Cannot upload files to a cancelled order");
+        }
+        if (customerEmail == null || customerEmail.isBlank()
+                || !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
+            throw new ForbiddenException("Customer email does not match this order");
         }
         return storeFile(file, order, null);
     }
