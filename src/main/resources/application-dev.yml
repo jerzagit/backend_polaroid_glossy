@@ -5,6 +5,18 @@ spring:
   application:
     name: polaroid-backend
   
+  mail:
+    host: localhost
+    port: 1025
+    username: dev@polaroid.com
+    password:
+    properties:
+      mail:
+        smtp:
+          auth: false
+          starttls:
+            enable: false
+  
   datasource:
     url: ${DATABASE_URL:jdbc:postgresql://localhost:5433/polaroid}
     driver-class-name: org.postgresql.Driver

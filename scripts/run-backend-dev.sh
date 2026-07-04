@@ -7,8 +7,14 @@ export DATABASE_URL="${DATABASE_URL:-jdbc:postgresql://localhost:5433/polaroid}"
 export DB_USERNAME="${DB_USERNAME:-postgres}"
 export DB_PASSWORD="${DB_PASSWORD:-password}"
 
-if command -v /usr/libexec/java_home >/dev/null 2>&1; then
+if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME:-}/bin/java" ]; then
+  : # use existing JAVA_HOME
+elif command -v /usr/libexec/java_home >/dev/null 2>&1; then
   export JAVA_HOME="$(/usr/libexec/java_home -v 17)"
+elif [ -d /usr/lib/jvm/java-17-openjdk-amd64 ]; then
+  export JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+elif [ -d /usr/lib/jvm/openjdk-17 ]; then
+  export JAVA_HOME=/usr/lib/jvm/openjdk-17
 else
   echo "Java 17 is required. Set JAVA_HOME to a Java 17 JDK before running this script." >&2
   exit 1

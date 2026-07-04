@@ -32,4 +32,5 @@ public class PrintSizeRequest {
     
     private String description;
     private Boolean isActive = true;
+    private String tag;
 }

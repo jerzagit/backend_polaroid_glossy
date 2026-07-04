@@ -39,4 +39,6 @@ public class PrintSize extends Auditable {
     @Column(name = "is_active")
     @Builder.Default
     private Boolean isActive = true;
+
+    private String tag;
 }
