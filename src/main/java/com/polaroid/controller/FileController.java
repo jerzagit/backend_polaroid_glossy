@@ -33,9 +33,9 @@ public class FileController {
             Authentication authentication,
             HttpServletRequest request) throws IOException {
 
-        Map<String, String> result;
+        Map<String, Object> result;
         if (authentication != null) {
-            result = fileService.uploadFile(file, orderId, orderItemId, authentication.getName());
+            result = fileService.uploadFile(file, orderId, orderItemId, customerEmail, authentication.getName());
         } else {
             result = fileService.uploadFileForOrder(file, orderId, orderItemId, customerEmail, uploadToken, clientIp(request));
         }

@@ -3,6 +3,7 @@ package com.polaroid.config;
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
 import com.polaroid.exception.ResourceNotFoundException;
+import com.polaroid.exception.UploadConflictException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -47,7 +48,22 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new HashMap<>();
         body.put("success", false);
         body.put("message", ex.getMessage());
+        body.put("error", ex.getMessage());
         return ResponseEntity.badRequest().body(body);
+    }
+
+    @ExceptionHandler(UploadConflictException.class)
+    public ResponseEntity<Map<String, Object>> handleUploadConflict(UploadConflictException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("success", false);
+        body.put("message", ex.getMessage());
+        body.put("error", ex.getMessage());
+        if (ex.getUploadedImageCount() != null) {
+            body.put("uploadedImageCount", ex.getUploadedImageCount());
+            body.put("expectedImageCount", ex.getExpectedImageCount());
+            body.put("remainingImageCount", ex.getRemainingImageCount());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
 
     @ExceptionHandler(ResourceNotFoundException.class)
@@ -55,6 +71,7 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new HashMap<>();
         body.put("success", false);
         body.put("message", ex.getMessage());
+        body.put("error", ex.getMessage());
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
     }
 
@@ -63,6 +80,7 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new HashMap<>();
         body.put("success", false);
         body.put("message", ex.getMessage());
+        body.put("error", ex.getMessage());
         return ResponseEntity.status(HttpStatus.FORBIDDEN).body(body);
     }
 

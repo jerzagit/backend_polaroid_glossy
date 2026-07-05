@@ -41,8 +41,10 @@ public class PrintSizeService {
     
     @Transactional
     public PrintSizeResponse createPrintSize(PrintSizeRequest request) {
-        if (printSizeRepository.existsById(request.getId())) {
-            throw new BadRequestException("Print size already exists: " + request.getId());
+        String id = request.getId().trim().toLowerCase();
+        request.setId(id);
+        if (printSizeRepository.existsById(id)) {
+            throw new BadRequestException("Print size already exists: " + id);
         }
         
         PrintSize printSize = printSizeMapper.toEntity(request);
@@ -52,8 +54,9 @@ public class PrintSizeService {
     
     @Transactional
     public PrintSizeResponse updatePrintSize(String id, PrintSizeRequest request) {
-        PrintSize printSize = printSizeRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + id));
+        String normalizedId = id.trim().toLowerCase();
+        PrintSize printSize = printSizeRepository.findById(normalizedId)
+                .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + normalizedId));
         
         printSize.setName(request.getName());
         printSize.setDisplayName(request.getDisplayName());
@@ -71,9 +74,10 @@ public class PrintSizeService {
     
     @Transactional
     public void deletePrintSize(String id) {
-        if (!printSizeRepository.existsById(id)) {
-            throw new ResourceNotFoundException("Print size not found: " + id);
+        String normalizedId = id.trim().toLowerCase();
+        if (!printSizeRepository.existsById(normalizedId)) {
+            throw new ResourceNotFoundException("Print size not found: " + normalizedId);
         }
-        printSizeRepository.deleteById(id);
+        printSizeRepository.deleteById(normalizedId);
     }
 }

@@ -75,8 +75,9 @@ public class OrderService {
         List<OrderItem> orderItems = new ArrayList<>();
         
         for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
-            PrintSize printSize = printSizeRepository.findById(itemReq.getSizeId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + itemReq.getSizeId()));
+            String sizeId = normalizeSizeId(itemReq.getSizeId());
+            PrintSize printSize = printSizeRepository.findById(sizeId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + sizeId));
             
             BigDecimal itemTotal = printSize.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
             subtotal = subtotal.add(itemTotal);
@@ -157,7 +158,9 @@ public class OrderService {
         if (requesterEmail != null) {
             User user = userRepository.findByEmail(requesterEmail)
                     .orElseThrow(() -> new ResourceNotFoundException("User not found"));
-            if (isStaff(user.getRole()) || (order.getUserId() != null && order.getUserId().equals(user.getId()))) {
+            if (isStaff(user.getRole())
+                    || (order.getUserId() != null && order.getUserId().equals(user.getId()))
+                    || requesterEmail.equalsIgnoreCase(order.getCustomerEmail())) {
                 return orderMapper.toDto(order);
             }
         }
@@ -382,6 +385,7 @@ public class OrderService {
     }
 
     private int expectedImageCount(OrderRequest.OrderItemRequest itemReq) {
+        int quantity = itemReq.getQuantity() != null ? itemReq.getQuantity() : 0;
         int expected;
         if (itemReq.getExpectedImageCount() != null) {
             if (itemReq.getExpectedImageCount() < 0) {
@@ -389,11 +393,11 @@ public class OrderService {
             }
             expected = itemReq.getExpectedImageCount();
         } else if (itemReq.getImageUrls() != null && !itemReq.getImageUrls().isEmpty()) {
-            expected = itemReq.getImageUrls().size();
+            expected = itemReq.getImageUrls().size() * quantity;
         } else if (itemReq.getCustomTexts() != null && !itemReq.getCustomTexts().isEmpty()) {
-            expected = itemReq.getCustomTexts().size();
+            expected = itemReq.getCustomTexts().size() * quantity;
         } else {
-            expected = itemReq.getQuantity() != null ? itemReq.getQuantity() : 0;
+            expected = quantity;
         }
 
         if (itemReq.getImageUrls() != null
@@ -403,8 +407,8 @@ public class OrderService {
         }
         if (itemReq.getCustomTexts() != null
                 && !itemReq.getCustomTexts().isEmpty()
-                && itemReq.getCustomTexts().size() != expected) {
-            throw new BadRequestException("customTexts must contain one entry per expected image");
+                && itemReq.getCustomTexts().size() > expected) {
+            throw new BadRequestException("customTexts cannot exceed expectedImageCount");
         }
 
         return expected;
@@ -468,8 +472,9 @@ public class OrderService {
             order.getItems().clear();
             List<OrderItem> newItems = new ArrayList<>();
             for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
-                PrintSize printSize = printSizeRepository.findById(itemReq.getSizeId())
-                        .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + itemReq.getSizeId()));
+                String sizeId = normalizeSizeId(itemReq.getSizeId());
+                PrintSize printSize = printSizeRepository.findById(sizeId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + sizeId));
                 BigDecimal itemTotal = printSize.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
                 OrderItem item = OrderItem.builder()
                         .sizeId(printSize.getId())
@@ -530,7 +535,9 @@ public class OrderService {
         User user = userRepository.findByEmail(requesterEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        if (isStaff(user.getRole()) || (order.getUserId() != null && order.getUserId().equals(user.getId()))) {
+        if (isStaff(user.getRole())
+                || (order.getUserId() != null && order.getUserId().equals(user.getId()))
+                || requesterEmail.equalsIgnoreCase(order.getCustomerEmail())) {
             return order;
         }
 
@@ -539,5 +546,9 @@ public class OrderService {
 
     private boolean isStaff(Role role) {
         return role == Role.ADMIN || role == Role.MARKETING || role == Role.PACKER;
+    }
+
+    private String normalizeSizeId(String sizeId) {
+        return sizeId == null ? null : sizeId.trim().toLowerCase();
     }
 }

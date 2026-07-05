@@ -1,18 +1,27 @@
 package com.polaroid.dto.mapper;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polaroid.dto.response.OrderItemResponse;
 import com.polaroid.dto.response.OrderResponse;
 import com.polaroid.dto.response.StatusHistoryResponse;
 import com.polaroid.model.Order;
 import com.polaroid.model.OrderItem;
 import com.polaroid.model.OrderStatusHistory;
+import com.polaroid.storage.StorageService;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 import java.util.stream.Collectors;
 
 @Component
+@RequiredArgsConstructor
+@Slf4j
 public class OrderMapper implements EntityMapper<Order, OrderResponse> {
+    private final ObjectMapper objectMapper;
+    private final StorageService storageService;
     
     @Override
     public OrderResponse toDto(Order entity) {
@@ -101,10 +110,40 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .expectedImageCount(item.getExpectedImageCount())
                 .unitPrice(item.getUnitPrice())
                 .totalPrice(item.getTotalPrice())
-                .images(item.getImages())
-                .customTexts(item.getCustomTexts())
+                .images(freshImageUrls(item))
+                .customTexts(readJsonStringList(item.getCustomTexts()))
                 .s3Keys(item.getS3Keys())
                 .build();
+    }
+
+    private List<String> freshImageUrls(OrderItem item) {
+        List<String> keys = readJsonStringList(item.getS3Keys());
+        if (!keys.isEmpty()) {
+            return keys.stream()
+                    .filter(key -> key != null && !key.isBlank())
+                    .map(this::renderableImageUrl)
+                    .collect(Collectors.toList());
+        }
+        return readJsonStringList(item.getImages());
+    }
+
+    private String renderableImageUrl(String keyOrUrl) {
+        if (keyOrUrl.startsWith("http://") || keyOrUrl.startsWith("https://")) {
+            return keyOrUrl;
+        }
+        return storageService.getSignedUrl(keyOrUrl, 3600);
+    }
+
+    private List<String> readJsonStringList(String json) {
+        try {
+            if (json == null || json.isBlank()) {
+                return List.of();
+            }
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to parse order item JSON metadata: {}", e.getMessage());
+            return List.of();
+        }
     }
     
     private StatusHistoryResponse toHistoryDto(OrderStatusHistory history) {

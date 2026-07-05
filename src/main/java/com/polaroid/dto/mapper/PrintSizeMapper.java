@@ -12,7 +12,7 @@ public class PrintSizeMapper {
         if (dto == null) return null;
         
         return PrintSize.builder()
-                .id(dto.getId())
+                .id(dto.getId().trim().toLowerCase())
                 .name(dto.getName())
                 .displayName(dto.getDisplayName())
                 .width(dto.getWidth())

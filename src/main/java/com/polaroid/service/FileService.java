@@ -30,6 +30,7 @@ import javax.imageio.stream.ImageOutputStream;
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
 import com.polaroid.exception.ResourceNotFoundException;
+import com.polaroid.exception.UploadConflictException;
 import com.polaroid.model.Order;
 import com.polaroid.model.OrderItem;
 import com.polaroid.model.User;
@@ -63,20 +64,21 @@ public class FileService {
     private final Map<String, UploadWindow> anonymousUploadWindows = new ConcurrentHashMap<>();
 
     @Transactional
-    public Map<String, String> uploadFile(MultipartFile file, String orderId, String orderItemId, String userEmail) throws IOException {
+    public Map<String, Object> uploadFile(MultipartFile file, String orderId, String orderItemId, String customerEmail, String userEmail) throws IOException {
         Order order = findAuthorizedOrder(orderId, userEmail);
+        validateCustomerEmailMatches(order, customerEmail);
         validateOrderAcceptsUpload(order);
         return storeFile(file, order, orderItemId);
     }
 
     @Transactional
-    public Map<String, String> uploadFileForOrder(MultipartFile file, String orderId, String orderItemId, String customerEmail, String uploadToken, String clientIp) throws IOException {
+    public Map<String, Object> uploadFileForOrder(MultipartFile file, String orderId, String orderItemId, String customerEmail, String uploadToken, String clientIp) throws IOException {
         Order order = findOrder(orderId);
         validateAnonymousUploadAllowed(order, customerEmail, uploadToken, clientIp);
         return storeFile(file, order, orderItemId);
     }
 
-    private Map<String, String> storeFile(MultipartFile file, Order order, String orderItemId) throws IOException {
+    private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId) throws IOException {
         OrderItem item = resolveOrderItemForUpdate(order, orderItemId);
         enforceUploadCapacity(item);
 
@@ -86,7 +88,7 @@ public class FileService {
         boolean isJpeg = "jpeg".equals(format);
         String extension = isJpeg ? "jpg" : "png";
         String fileName = UUID.randomUUID().toString() + "." + extension;
-        String folder = "orders/" + order.getOrderNumber() + "/original";
+        String folder = "orders/" + order.getOrderNumber() + "/" + item.getId();
         String key = folder + "/" + fileName;
 
         try {
@@ -97,13 +99,17 @@ public class FileService {
             persistUploadedFile(item, key, signedUrl);
             invalidateUploadTokenIfComplete(order);
 
-            Map<String, String> result = new HashMap<>();
+            int uploadedCount = readJsonStringList(item.getS3Keys()).size();
+            int expectedCount = expectedImageCount(item);
+
+            Map<String, Object> result = new HashMap<>();
             result.put("key", key);
             result.put("url", signedUrl);
             result.put("fileName", fileName);
-            if (orderItemId != null && !orderItemId.isBlank()) {
-                result.put("orderItemId", orderItemId);
-            }
+            result.put("orderItemId", item.getId().toString());
+            result.put("uploadedImageCount", uploadedCount);
+            result.put("expectedImageCount", expectedCount);
+            result.put("remainingImageCount", Math.max(0, expectedCount - uploadedCount));
 
             return result;
         } catch (Exception e) {
@@ -147,19 +153,26 @@ public class FileService {
 
         int uploadedCount = readJsonStringList(item.getS3Keys()).size();
         if (uploadedCount >= expectedImageCount) {
-            throw new BadRequestException("Upload limit reached for this order item");
+            throw new UploadConflictException(
+                    "This order item already has the expected number of uploads",
+                    uploadedCount,
+                    expectedImageCount);
         }
     }
 
     private void validateAnonymousUploadAllowed(Order order, String customerEmail, String uploadToken, String clientIp) {
         validateOrderAcceptsUpload(order);
+        validateCustomerEmailMatches(order, customerEmail);
+        validateGuestUploadToken(order, uploadToken);
+
+        enforceAnonymousUploadRateLimit(order, clientIp);
+    }
+
+    private void validateCustomerEmailMatches(Order order, String customerEmail) {
         if (customerEmail == null || customerEmail.isBlank()
                 || !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
             throw new ForbiddenException("Customer email does not match this order");
         }
-        validateGuestUploadToken(order, uploadToken);
-
-        enforceAnonymousUploadRateLimit(order, clientIp);
     }
 
     private void validateGuestUploadToken(Order order, String uploadToken) {
@@ -180,18 +193,13 @@ public class FileService {
     }
 
     private void validateOrderAcceptsUpload(Order order) {
-        if (order.getStatus() == OrderStatus.CANCELLED
-                || order.getStatus() == OrderStatus.REFUNDED
-                || order.getStatus() == OrderStatus.EXPIRED) {
-            throw new BadRequestException("Cannot upload files to a closed order");
+        if (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.PROCESSING) {
+            throw new UploadConflictException("Order is not open for uploads");
         }
-        if (order.getStatus() == OrderStatus.POSTED
-                || order.getStatus() == OrderStatus.ON_DELIVERY
-                || order.getStatus() == OrderStatus.DELIVERED) {
-            throw new BadRequestException("Cannot upload files after an order has been dispatched");
-        }
-        if (order.getPaymentStatus() == PaymentStatus.FAILED) {
-            throw new BadRequestException("Cannot upload files to an order with failed payment");
+        if (order.getPaymentStatus() == PaymentStatus.FAILED
+                || order.getPaymentStatus() == PaymentStatus.CANCELLED
+                || order.getPaymentStatus() == PaymentStatus.REFUNDED) {
+            throw new UploadConflictException("Order is not open for uploads");
         }
     }
 
@@ -520,7 +528,9 @@ public class FileService {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
 
-        if (isStaff(user.getRole()) || (order.getUserId() != null && order.getUserId().equals(user.getId()))) {
+        if (isStaff(user.getRole())
+                || (order.getUserId() != null && order.getUserId().equals(user.getId()))
+                || userEmail.equalsIgnoreCase(order.getCustomerEmail())) {
             return order;
         }
 

@@ -26,10 +26,10 @@ public class SeedDataConfig {
     CommandLineRunner seedPrintSizes() {
         return args -> {
             for (var size : List.of(
-                    printSize("2R", "2R", "2R (2.5 x 3.5 inches)", "2.5", "3.5", "3.00", "Wallet size - Perfect for keepsakes", "MINI"),
-                    printSize("3R", "3R", "3R (3.5 x 5 inches)", "3.5", "5", "4.00", "Standard photo size - Great for albums", "CLASSIC"),
-                    printSize("4R", "4R", "4R (4 x 6 inches)", "4", "6", "5.00", "Most popular - Classic polaroid style", "BESTSELLER"),
-                    printSize("A4", "A4", "A4 (8.3 x 11.7 inches)", "8.3", "11.7", "15.00", "Poster size - Perfect for displays", "PREMIUM")
+                    printSize("2r", "2R", "2R (2.5 x 3.5 inches)", "2.5", "3.5", "3.00", "Wallet size - Perfect for keepsakes", "MINI"),
+                    printSize("3r", "3R", "3R (3.5 x 5 inches)", "3.5", "5", "4.00", "Standard photo size - Great for albums", "CLASSIC"),
+                    printSize("4r", "4R", "4R (4 x 6 inches)", "4", "6", "5.00", "Most popular - Classic polaroid style", "BESTSELLER"),
+                    printSize("a4", "A4", "A4 (8.3 x 11.7 inches)", "8.3", "11.7", "15.00", "Poster size - Perfect for displays", "PREMIUM")
             )) {
                 if (printSizeRepository.findById(size.getId()).isEmpty()) {
                     printSizeRepository.save(size);
