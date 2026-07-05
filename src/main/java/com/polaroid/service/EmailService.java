@@ -89,6 +89,7 @@ public class EmailService {
             ctx.setVariables(Map.of(
                 "order", order,
                 "trackingUrl", frontendUrl + "?order=" + order.getOrderNumber(),
+                "uploadUrl", frontendUrl + "?order=" + order.getOrderNumber() + "&upload=1",
                 "supportWhatsApp", supportWhatsApp,
                 "supportEmail", supportEmail
             ));
