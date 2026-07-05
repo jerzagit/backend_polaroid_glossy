@@ -138,12 +138,14 @@ public class OrderService {
         return response;
     }
     
+    @Transactional(readOnly = true)
     public OrderResponse getOrderByNumber(String orderNumber) {
         Order order = orderRepository.findByOrderNumber(orderNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         return orderMapper.toDto(order);
     }
-
+    
+    @Transactional(readOnly = true)
     public OrderResponse getOrderByNumber(String orderNumber, String requesterEmail, String verificationEmail) {
         Order order = orderRepository.findByOrderNumber(orderNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
@@ -163,6 +165,7 @@ public class OrderService {
         throw new ForbiddenException("Order email verification is required");
     }
     
+    @Transactional(readOnly = true)
     public Page<OrderResponse> getUserOrders(String userEmail, Pageable pageable) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -170,6 +173,7 @@ public class OrderService {
                 .map(orderMapper::toDto);
     }
 
+    @Transactional(readOnly = true)
     public Page<OrderResponse> getUserOrders(String userEmail, Pageable pageable, OrderStatus status) {
         User user = userRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
@@ -196,6 +200,7 @@ public class OrderService {
         }
     }
     
+    @Transactional(readOnly = true)
     public Page<OrderResponse> getOrdersWithFilters(
             OrderStatus status,
             PaymentStatus paymentStatus,
@@ -334,6 +339,9 @@ public class OrderService {
                 .message(message)
                 .build();
         statusHistoryRepository.save(history);
+        if (order.getStatusHistory() != null) {
+            order.getStatusHistory().add(history);
+        }
     }
     
     private String generateOrderNumber() {
@@ -397,6 +405,7 @@ public class OrderService {
         return digits.isBlank() ? null : digits;
     }
 
+    @Transactional(readOnly = true)
     public List<OrderResponse> getOrdersByUserId(UUID userId) {
         return orderRepository.findByUserId(userId, Pageable.unpaged()).stream()
                 .map(orderMapper::toDto)
