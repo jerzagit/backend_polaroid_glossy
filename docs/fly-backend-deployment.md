@@ -14,14 +14,15 @@ For the full release workflow, see `docs/production-workflow.md`.
 - Health check: `/api/health`
 - Public API base after deploy: `https://polaroid-glossy-backend.fly.dev/api`
 
-## Files Added
+## Deployment Files
 
 - `Dockerfile` builds the Spring Boot jar with Maven and runs it on Eclipse Temurin Java 17.
 - `.dockerignore` keeps frontend, local storage, env files, target output, and docs out of the Docker build context.
 - `fly.toml` configures the Fly app, region, port, production Spring profile, and health check.
+- `.github/workflows/fly-deploy.yml` deploys `main` to Fly.io with `flyctl deploy --remote-only`.
 - `HealthController` exposes `GET /api/health`.
 
-## Required Secrets
+## Required Fly Secrets
 
 Set secrets in Fly. Do not commit real values into git.
 
@@ -58,6 +59,26 @@ Still needed before production payment flow is ready:
 - `TOYYIBPAY_RETURN_URL`
 - `TOYYIBPAY_CALLBACK_URL`
 
+## Required GitHub Secret
+
+For automatic deploys from GitHub Actions, add this repository secret:
+
+```text
+FLY_API_TOKEN
+```
+
+Generate it locally with:
+
+```bash
+flyctl tokens create deploy --app polaroid-glossy-backend
+```
+
+Then add the value in GitHub under:
+
+```text
+Settings -> Secrets and variables -> Actions -> New repository secret
+```
+
 ## Build Check
 
 Run a remote build without deploying:
@@ -70,7 +91,9 @@ This confirms the Dockerfile can build the Spring Boot jar on Fly builders.
 
 ## Deploy
 
-After all secrets are set:
+Deploys run automatically when `main` receives a push. You can also trigger the `Deploy to Fly` workflow manually from GitHub Actions.
+
+For a local manual deploy after all secrets are set:
 
 ```bash
 flyctl deploy --app polaroid-glossy-backend
@@ -84,7 +107,7 @@ Keep the backend machine at 512 MB or higher:
 flyctl scale memory 512 --app polaroid-glossy-backend
 ```
 
-The first production deploy reused an existing Supabase schema. We manually added the V3 checkout address columns and marked Flyway as baselined at version 3 so Flyway does not replay local setup migrations against existing production tables. Future migrations should be added as new `V4__...` files.
+The first production deploy reused an existing Supabase schema. Keep future schema changes in new Flyway migration files and let Flyway apply them during deploy.
 
 ## Verify
 

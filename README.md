@@ -28,7 +28,7 @@ REST API backend for e-commerce platform specializing in polaroid photo printing
 | File Storage | Supabase Storage (R2-compatible) | - |
 | Payment | ToyyibPay | API v1 |
 | Scheduling | Spring @Scheduled | Draft expiry cleanup every 10 min |
-| Migration | Flyway | 11 migrations applied |
+| Migration | Flyway | 12 migrations applied |
 
 ---
 
