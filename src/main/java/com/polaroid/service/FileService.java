@@ -94,7 +94,7 @@ public class FileService {
             storageService.upload(key, processedImage, contentType);
             String signedUrl = storageService.getSignedUrl(key, 3600);
 
-            persistUploadedFileKey(item, key);
+            persistUploadedFile(item, key, signedUrl);
             invalidateUploadTokenIfComplete(order);
 
             Map<String, String> result = new HashMap<>();
@@ -112,8 +112,8 @@ public class FileService {
         }
     }
 
-    private void persistUploadedFileKey(OrderItem item, String key) {
-        item.setImages(appendJsonString(item.getImages(), key));
+    private void persistUploadedFile(OrderItem item, String key, String url) {
+        item.setImages(appendJsonString(item.getImages(), url));
         item.setS3Keys(appendJsonString(item.getS3Keys(), key));
         orderItemRepository.save(item);
     }
@@ -140,13 +140,13 @@ public class FileService {
     }
 
     private void enforceUploadCapacity(OrderItem item) {
-        int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
-        if (quantity <= 0) {
+        int expectedImageCount = expectedImageCount(item);
+        if (expectedImageCount <= 0) {
             throw new BadRequestException("Order item does not allow image uploads");
         }
 
         int uploadedCount = readJsonStringList(item.getS3Keys()).size();
-        if (uploadedCount >= quantity) {
+        if (uploadedCount >= expectedImageCount) {
             throw new BadRequestException("Upload limit reached for this order item");
         }
     }
@@ -164,7 +164,7 @@ public class FileService {
 
     private void validateGuestUploadToken(Order order, String uploadToken) {
         if (order.getUploadTokenHash() == null || order.getUploadTokenHash().isBlank()) {
-            return;
+            throw new ForbiddenException("Upload token is required for this order");
         }
         if (uploadToken == null || uploadToken.isBlank()) {
             throw new ForbiddenException("Upload token is required for this order");
@@ -221,8 +221,8 @@ public class FileService {
     private void invalidateUploadTokenIfComplete(Order order) {
         List<OrderItem> items = orderItemRepository.findByOrderIdForUpdate(order.getId());
         boolean complete = !items.isEmpty() && items.stream().allMatch(item -> {
-            int quantity = item.getQuantity() != null ? item.getQuantity() : 0;
-            return quantity > 0 && readJsonStringList(item.getS3Keys()).size() >= quantity;
+            int expectedImageCount = expectedImageCount(item);
+            return expectedImageCount > 0 && readJsonStringList(item.getS3Keys()).size() >= expectedImageCount;
         });
 
         if (complete && order.getUploadTokenHash() != null) {
@@ -261,6 +261,13 @@ public class FileService {
         } catch (Exception e) {
             throw new IllegalStateException("Failed to update uploaded file metadata", e);
         }
+    }
+
+    private int expectedImageCount(OrderItem item) {
+        if (item.getExpectedImageCount() != null) {
+            return item.getExpectedImageCount();
+        }
+        return item.getQuantity() != null ? item.getQuantity() : 0;
     }
 
     public void deleteFile(String key) throws IOException {

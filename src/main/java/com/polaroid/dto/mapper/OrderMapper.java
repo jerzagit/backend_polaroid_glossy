@@ -98,6 +98,7 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .sizeId(item.getSizeId())
                 .sizeName(item.getSizeName())
                 .quantity(item.getQuantity())
+                .expectedImageCount(item.getExpectedImageCount())
                 .unitPrice(item.getUnitPrice())
                 .totalPrice(item.getTotalPrice())
                 .images(item.getImages())

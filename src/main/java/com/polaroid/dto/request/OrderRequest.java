@@ -53,6 +53,8 @@ public class OrderRequest {
         
         @NotNull(message = "Quantity is required")
         private Integer quantity;
+
+        private Integer expectedImageCount;
         
         private List<String> imageUrls;
         private List<String> customTexts;

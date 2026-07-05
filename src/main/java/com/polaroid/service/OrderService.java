@@ -1,5 +1,7 @@
 package com.polaroid.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polaroid.dto.request.OrderRequest;
 import com.polaroid.dto.request.UpdateOrderRequest;
 import com.polaroid.dto.response.OrderResponse;
@@ -47,6 +49,7 @@ public class OrderService {
     private final UserRepository userRepository;
     private final OrderMapper orderMapper;
     private final EmailService emailService;
+    private final ObjectMapper objectMapper;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -82,6 +85,7 @@ public class OrderService {
                     .sizeId(printSize.getId())
                     .sizeName(printSize.getDisplayName())
                     .quantity(itemReq.getQuantity())
+                    .expectedImageCount(expectedImageCount(itemReq))
                     .unitPrice(printSize.getPrice())
                     .totalPrice(itemTotal)
                     .images(formatJsonArray(itemReq.getImageUrls()))
@@ -370,7 +374,40 @@ public class OrderService {
         if (list == null || list.isEmpty()) {
             return "[]";
         }
-        return "[\"" + String.join("\",\"", list) + "\"]";
+        try {
+            return objectMapper.writeValueAsString(list);
+        } catch (JsonProcessingException e) {
+            throw new BadRequestException("Invalid image or custom text metadata");
+        }
+    }
+
+    private int expectedImageCount(OrderRequest.OrderItemRequest itemReq) {
+        int expected;
+        if (itemReq.getExpectedImageCount() != null) {
+            if (itemReq.getExpectedImageCount() < 0) {
+                throw new BadRequestException("expectedImageCount cannot be negative");
+            }
+            expected = itemReq.getExpectedImageCount();
+        } else if (itemReq.getImageUrls() != null && !itemReq.getImageUrls().isEmpty()) {
+            expected = itemReq.getImageUrls().size();
+        } else if (itemReq.getCustomTexts() != null && !itemReq.getCustomTexts().isEmpty()) {
+            expected = itemReq.getCustomTexts().size();
+        } else {
+            expected = itemReq.getQuantity() != null ? itemReq.getQuantity() : 0;
+        }
+
+        if (itemReq.getImageUrls() != null
+                && !itemReq.getImageUrls().isEmpty()
+                && itemReq.getImageUrls().size() > expected) {
+            throw new BadRequestException("imageUrls cannot exceed expectedImageCount");
+        }
+        if (itemReq.getCustomTexts() != null
+                && !itemReq.getCustomTexts().isEmpty()
+                && itemReq.getCustomTexts().size() != expected) {
+            throw new BadRequestException("customTexts must contain one entry per expected image");
+        }
+
+        return expected;
     }
 
     private BigDecimal shippingCost(String state) {
@@ -438,6 +475,7 @@ public class OrderService {
                         .sizeId(printSize.getId())
                         .sizeName(printSize.getDisplayName())
                         .quantity(itemReq.getQuantity())
+                        .expectedImageCount(expectedImageCount(itemReq))
                         .unitPrice(printSize.getPrice())
                         .totalPrice(itemTotal)
                         .images(formatJsonArray(itemReq.getImageUrls()))

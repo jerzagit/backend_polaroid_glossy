@@ -16,6 +16,7 @@ public class OrderItemResponse {
     private String sizeId;
     private String sizeName;
     private Integer quantity;
+    private Integer expectedImageCount;
     private BigDecimal unitPrice;
     private BigDecimal totalPrice;
     private String images;
