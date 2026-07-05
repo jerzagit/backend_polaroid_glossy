@@ -32,6 +32,9 @@ public class OrderItem extends Auditable {
     
     @Column(nullable = false)
     private Integer quantity;
+
+    @Column(name = "expected_image_count")
+    private Integer expectedImageCount;
     
     @Column(name = "unit_price", precision = 10, scale = 2, nullable = false)
     private BigDecimal unitPrice;
