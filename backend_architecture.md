@@ -149,11 +149,13 @@
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  │
 │  │  CONTROLLER │  │   SERVICE   │  │  REPOSITORY │  │    MODEL    │  │
 │  │             │  │             │  │             │  │             │  │
-│  │ AuthCtlr    │  │ AuthService │  │ UserRepo    │  │ User        │  │
-│  │ OrderCtlr   │  │ OrderService│  │ OrderRepo   │  │ Order       │  │
-│  │ AdminCtlr   │  │ PaymentSvc  │  │ OrderItemR  │  │ OrderItem   │  │
-│  │ FileCtlr    │  │ FileService │  │ StatsRepo   │  │ StatusHist  │  │
-│  │ SystemCtlr  │  │ SystemSvc   │  │             │  │ SystemInfo  │  │
+│  │ AuthCtlr     │  │ AuthService  │  │ UserRepo     │  │ User         │  │
+│  │ OrderCtlr    │  │ OrderService │  │ OrderRepo    │  │ Order        │  │
+│  │ AddressCtlr  │  │ AddressSvc   │  │ AddressRepo  │  │ Address      │  │
+│  │ AdminCtlr    │  │ PaymentSvc   │  │ OrderItemR   │  │ OrderItem    │  │
+│  │ FileCtlr     │  │ FileService  │  │ StatsRepo    │  │ StatusHist   │  │
+│  │ SystemCtlr   │  │ SystemSvc    │  │              │  │ SystemInfo   │  │
+│  │ PrintSizeCtlr│  │ PrintSizeSvc │  │              │  │ PrintSize    │  │
 │  └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘  │
 │                                    │                                    │
 │                                    ▼                                    │
@@ -189,34 +191,37 @@
 │ phone          │   │   │ customer_name   │       │ unit_price      │
 │ avatar_url     │   │   │ customer_email  │       │ total_price     │
 │ role           │   │   │ customer_phone  │       │ images (JSONB)  │
-│ affiliate_code │   │   │ customer_state │       │ custom_texts    │
-│ referred_by    │   │   │ status         │       │ s3_keys (JSONB) │
-│ created_at     │   │   │ payment_status │       │ created_at      │
-│ updated_at     │   │   │ payment_method │       └─────────────────┘
-└─────────────────┘   │   │ toyyibpay_ref │
-                       │   │ subtotal      │
-┌─────────────────┐   │   │ shipping      │
-│  USER (referral)│   │   │ total         │
-├─────────────────┤   │   │ paid_at       │
-│ id (UUID) PK   │───┘   │ tracking_num  │
-│ affiliate_code  │       │ shipped_at    │
-└─────────────────┘       │ delivered_at  │
-                          │ notes         │
-                          │ created_at    │
-                          │ updated_at    │
-                          └───────────────┘
-                                  │
-                                  │ 1:N
-                                  ▼
-                          ┌─────────────────┐
-                          │STATUS_HISTORY  │
-                          ├─────────────────┤
-                          │ id (UUID) PK   │
-                          │ order_id (FK)  │
-                          │ status         │
-                          │ message        │
-                          │ created_at     │
-                          └─────────────────┘
+│ affiliate_code │   │   │ customer_state  │       │ custom_texts    │
+│ referred_by    │   │   │ status          │       │ s3_keys (JSONB) │
+│ created_at     │   │   │ payment_status  │       │ created_at      │
+│ updated_at     │   │   │ payment_method  │       └─────────────────┘
+└─────────────────┘   │   │ toyyibpay_ref  │
+                       │   │ subtotal       │
+┌─────────────────┐   │   │ shipping       │
+│  USER (referral)│   │   │ total          │
+├─────────────────┤   │   │ paid_at        │
+│ id (UUID) PK   │───┘   │ tracking_num   │
+│ affiliate_code  │       │ shipped_at     │
+└─────────────────┘       │ delivered_at   │
+                           │ notes          │
+┌─────────────────┐       │ expires_at     │── NEW: DRAFT TTL
+│    ADDRESS      │       │ draft_expired_at│── NEW: when marked EXPIRED
+├─────────────────┤       │ created_at     │
+│ id (UUID) PK   │       │ updated_at     │
+│ user_id (FK)   │◄──────└───────┬──────────┘
+│ label          │               │
+│ name           │               │ 1:N
+│ phone          │               ▼
+│ house_unit_no  │       ┌─────────────────┐
+│ address_line_1 │       │STATUS_HISTORY   │
+│ address_line_2 │       ├─────────────────┤
+│ city           │       │ id (UUID) PK   │
+│ state          │       │ order_id (FK)  │
+│ postal_code    │       │ status         │
+│ country        │       │ message        │
+│ is_default     │       │ created_at     │
+│ created_at     │       └─────────────────┘
+└─────────────────┘
 ```
 
 ### 4.2 SQL Schema (PostgreSQL)
@@ -255,10 +260,11 @@ CREATE TABLE orders (
     customer_name VARCHAR(255) NOT NULL,
     customer_email VARCHAR(255) NOT NULL,
     customer_phone VARCHAR(50),
-    customer_state VARCHAR(10) DEFAULT 'w',
+    customer_state VARCHAR(10) DEFAULT 'W',
     
-    -- Status: PENDING, PROCESSING, POSTED, ON_DELIVERY, DELIVERED, CANCELLED, REFUNDED
+    -- Status: DRAFT, PENDING, PROCESSING, POSTED, ON_DELIVERY, DELIVERED, CANCELLED, REFUNDED, EXPIRED
     status VARCHAR(20) DEFAULT 'PENDING',
+    CONSTRAINT orders_status_check CHECK (status IN ('DRAFT','PENDING','PROCESSING','POSTED','ON_DELIVERY','DELIVERED','CANCELLED','REFUNDED','EXPIRED')),
     
     -- Payment: PENDING, PAID, FAILED
     payment_status VARCHAR(20) DEFAULT 'PENDING',
@@ -277,15 +283,12 @@ CREATE TABLE orders (
     cancel_reason TEXT,
     notes TEXT,
     
+    expires_at TIMESTAMP WITH TIME ZONE,       -- When DRAFT expires (set 24h after creation)
+    draft_expired_at TIMESTAMP WITH TIME ZONE,  -- When DRAFT was actually marked EXPIRED
+    
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
-
-CREATE INDEX idx_orders_order_number ON orders(order_number);
-CREATE INDEX idx_orders_user_id ON orders(user_id);
-CREATE INDEX idx_orders_status ON orders(status);
-CREATE INDEX idx_orders_payment_status ON orders(payment_status);
-CREATE INDEX idx_orders_created_at ON orders(created_at);
 
 -- =============================================
 -- ORDER ITEMS TABLE
@@ -313,6 +316,7 @@ CREATE TABLE order_status_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
     status VARCHAR(20) NOT NULL,
+    CONSTRAINT order_status_history_status_check CHECK (status IN ('DRAFT','PENDING','PROCESSING','POSTED','ON_DELIVERY','DELIVERED','CANCELLED','REFUNDED','EXPIRED')),
     message TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -335,12 +339,34 @@ CREATE TABLE print_sizes (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
+-- Addresses table (saved user addresses)
+CREATE TABLE addresses (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    label VARCHAR(20) NOT NULL DEFAULT 'Other',
+    name VARCHAR(100) NOT NULL,
+    phone VARCHAR(15),
+    house_unit_no VARCHAR(50),
+    address_line_1 VARCHAR(200) NOT NULL,
+    address_line_2 VARCHAR(200),
+    city VARCHAR(100) NOT NULL,
+    state VARCHAR(50) NOT NULL,
+    postal_code VARCHAR(10) NOT NULL,
+    country VARCHAR(100) NOT NULL DEFAULT 'Malaysia',
+    is_default BOOLEAN NOT NULL DEFAULT false,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_by VARCHAR(255),
+    updated_by VARCHAR(255)
+);
+CREATE INDEX idx_addresses_user_id ON addresses(user_id);
+
 -- Default print sizes
 INSERT INTO print_sizes (id, name, display_name, width, height, price, description) VALUES
-('2r', '2R', '2R (2.5 x 3.5 inches)', 2.5, 3.5, 0.50, 'Wallet size - Perfect for keepsakes'),
-('3r', '3R', '3R (3.5 x 5 inches)', 3.5, 5.0, 0.75, 'Standard photo size - Great for albums'),
-('4r', '4R', '4R (4 x 6 inches)', 4.0, 6.0, 1.00, 'Most popular - Classic polaroid style'),
-('a4', 'A4', 'A4 (8.3 x 11.7 inches)', 8.3, 11.7, 3.50, 'Poster size - Perfect for displays');
+('2R', '2R', '2R (2.5 x 3.5 inches)', 2.5, 3.5, 3.00, 'Wallet size - Perfect for keepsakes'),
+('3R', '3R', '3R (3.5 x 5 inches)', 3.5, 5.0, 4.00, 'Standard photo size - Great for albums'),
+('4R', '4R', '4R (4 x 6 inches)', 4.0, 6.0, 5.00, 'Most popular - Classic polaroid style'),
+('A4', 'A4', 'A4 (8.3 x 11.7 inches)', 8.3, 11.7, 15.00, 'Poster size - Perfect for displays');
 ```
 
 ---
@@ -353,21 +379,43 @@ INSERT INTO print_sizes (id, name, display_name, width, height, price, descripti
 |--------|----------|-------------|--------|
 | POST | `/api/auth/register` | Register new customer | Public |
 | POST | `/api/auth/login` | Login, returns JWT | Public |
-| POST | `/api/auth/refresh` | Refresh JWT token | Auth |
+| POST | `/api/auth/refresh` | Refresh JWT token | Public (with refreshToken) |
 | GET | `/api/auth/me` | Get current user | Auth |
-| PUT | `/api/auth/profile` | Update profile | Auth |
-| POST | `/api/auth/google` | Google OAuth callback | Public |
+| GET | `/api/auth/profile` | Get user profile with order/draft/address counts | Auth |
+| POST | `/api/auth/google` | Google OAuth callback (creates/finds user, returns JWT) | Public |
+| POST | `/api/auth/setup-admin` | Create admin (secret-protected) | Public |
 
 ### 5.2 Orders (Public)
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
-| POST | `/api/orders` | Create new order | Auth |
-| GET | `/api/orders/{orderNumber}` | Get order by number | Public |
-| GET | `/api/orders/my` | Get my orders | Auth |
-| POST | `/api/orders/{id}/pay` | Initiate payment | Auth |
+| POST | `/api/orders` | Create new order (DRAFT for guests, PENDING for authed) | Optional |
+| GET | `/api/orders?orderNumber=X` | Get order by number | Public |
+| GET | `/api/orders/{orderNumber}` | Get order by number path param | Public |
+| GET | `/api/orders/my?page=0&size=20&status=DRAFT` | Get my paginated orders (with status filter) | Auth |
+| POST | `/api/orders/{orderNumber}/pay` | Initiate ToyyibPay payment | Auth |
+| POST | `/api/orders/{orderNumber}/mock-pay` | Mock payment (dev only) | Auth |
+| PUT | `/api/orders` | Update order (items, address) | Auth |
+| DELETE | `/api/orders?orderId=X` | Cancel order | Auth |
+| GET | `/api/orders/payment-return` | ToyyibPay return redirect handler | Public |
 
-### 5.3 Orders (Admin/Packer/Marketing)
+### 5.3 Addresses
+
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/api/addresses` | List my addresses (default first) | Auth |
+| POST | `/api/addresses` | Create address (max 10) | Auth |
+| PUT | `/api/addresses/{id}` | Update address | Auth |
+| DELETE | `/api/addresses/{id}` | Delete address | Auth |
+| PATCH | `/api/addresses/{id}/default` | Set as default address | Auth |
+
+### 5.4 Print Sizes (Public)
+
+| Method | Endpoint | Description | Access |
+|--------|----------|-------------|--------|
+| GET | `/api/print-sizes` | Get active print sizes (prices from DB) | Public |
+
+### 5.5 Orders (Admin/Packer/Marketing)
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
@@ -377,7 +425,7 @@ INSERT INTO print_sizes (id, name, display_name, width, height, price, descripti
 | PATCH | `/api/admin/orders/{id}/tracking` | Add tracking # | Packer+ |
 | POST | `/api/admin/orders/{id}/notes` | Add internal notes | Marketing+ |
 
-### 5.4 Stats & Analytics
+### 5.6 Stats & Analytics
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
@@ -387,7 +435,7 @@ INSERT INTO print_sizes (id, name, display_name, width, height, price, descripti
 | GET | `/api/admin/stats/top-sizes` | Best selling sizes | Marketing+ |
 | GET | `/api/admin/stats/by-state` | Orders by state | Admin only |
 
-### 5.5 System Info (Super Admin Only)
+### 5.7 System Info (Super Admin Only)
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
@@ -396,7 +444,7 @@ INSERT INTO print_sizes (id, name, display_name, width, height, price, descripti
 | GET | `/api/admin/system/payment-costs` | ToyyibPay transaction fees | Super Admin |
 | GET | `/api/admin/system/server` | Server health & metrics | Super Admin |
 
-### 5.6 File Management
+### 5.8 File Management
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
@@ -404,13 +452,13 @@ INSERT INTO print_sizes (id, name, display_name, width, height, price, descripti
 | GET | `/api/orders/{id}/download` | Download all images as ZIP | Packer+ |
 | DELETE | `/api/files/{key}` | Delete image | Auth |
 
-### 5.7 ToyyibPay Webhook
+### 5.9 ToyyibPay Webhook
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
 | POST | `/api/webhooks/toyyibpay` | Payment callback | ToyyibPay |
 
-### 5.8 User Management (Admin)
+### 5.10 User Management (Admin)
 
 | Method | Endpoint | Description | Access |
 |--------|----------|-------------|--------|
@@ -700,16 +748,21 @@ polaroid-backend/
 │   │   │   │   ├── AuthController.java
 │   │   │   │   ├── OrderController.java
 │   │   │   │   ├── AdminController.java
+│   │   │   │   ├── AddressController.java
 │   │   │   │   ├── FileController.java
+│   │   │   │   ├── PrintSizeController.java
 │   │   │   │   ├── SystemController.java
 │   │   │   │   └── WebhookController.java
 │   │   │   │
 │   │   │   ├── service/
 │   │   │   │   ├── AuthService.java
 │   │   │   │   ├── OrderService.java
+│   │   │   │   ├── AddressService.java
 │   │   │   │   ├── PaymentService.java
 │   │   │   │   ├── FileService.java
 │   │   │   │   ├── StatsService.java
+│   │   │   │   ├── PrintSizeService.java
+│   │   │   │   ├── DraftCleanupService.java
 │   │   │   │   └── SystemService.java
 │   │   │   │
 │   │   │   ├── repository/
@@ -717,17 +770,21 @@ polaroid-backend/
 │   │   │   │   ├── OrderRepository.java
 │   │   │   │   ├── OrderItemRepository.java
 │   │   │   │   ├── OrderStatusHistoryRepository.java
+│   │   │   │   ├── AddressRepository.java
 │   │   │   │   └── PrintSizeRepository.java
 │   │   │   │
 │   │   │   ├── model/
+│   │   │   │   ├── base/
+│   │   │   │   │   └── Auditable.java
 │   │   │   │   ├── User.java
 │   │   │   │   ├── Order.java
 │   │   │   │   ├── OrderItem.java
 │   │   │   │   ├── OrderStatusHistory.java
+│   │   │   │   ├── Address.java
 │   │   │   │   ├── PrintSize.java
 │   │   │   │   └── enums/
 │   │   │   │       ├── Role.java
-│   │   │   │       ├── OrderStatus.java
+│   │   │   │       ├── OrderStatus.java (DRAFT, PENDING, ..., EXPIRED)
 │   │   │   │       └── PaymentStatus.java
 │   │   │   │
 │   │   │   ├── dto/
@@ -735,13 +792,26 @@ polaroid-backend/
 │   │   │   │   │   ├── LoginRequest.java
 │   │   │   │   │   ├── RegisterRequest.java
 │   │   │   │   │   ├── OrderRequest.java
-│   │   │   │   │   └── OrderStatusUpdate.java
+│   │   │   │   │   ├── OrderStatusUpdateRequest.java
+│   │   │   │   │   ├── UpdateOrderRequest.java
+│   │   │   │   │   ├── UpdatePaymentStatusRequest.java
+│   │   │   │   │   ├── AddressRequest.java
+│   │   │   │   │   ├── PrintSizeRequest.java
+│   │   │   │   │   └── UserRoleUpdateRequest.java
 │   │   │   │   │
-│   │   │   │   └── response/
-│   │   │   │       ├── AuthResponse.java
-│   │   │   │       ├── OrderResponse.java
-│   │   │   │       ├── StatsResponse.java
-│   │   │   │       └── SystemInfoResponse.java
+│   │   │   │   ├── response/
+│   │   │   │   │   ├── AuthResponse.java
+│   │   │   │   │   ├── UserResponse.java
+│   │   │   │   │   ├── OrderResponse.java
+│   │   │   │   │   ├── OrderItemResponse.java
+│   │   │   │   │   ├── StatusHistoryResponse.java
+│   │   │   │   │   ├── AddressResponse.java
+│   │   │   │   │   ├── PrintSizeResponse.java
+│   │   │   │   │   ├── StatsOverviewResponse.java
+│   │   │   │   │   └── SystemInfoResponse.java
+│   │   │   │   │
+│   │   │   │   └── mapper/
+│   │   │   │       └── OrderMapper.java
 │   │   │   │
 │   │   │   ├── security/
 │   │   │   │   ├── JwtTokenProvider.java
@@ -916,12 +986,25 @@ CORS_ORIGINS=http://localhost:3000
 - [x] End-to-end login/auth flow working
 - [x] AuthContext fixed to fetch user profile via /auth/me after login
 
-### Phase 9: Testing & Deployment
-- [ ] Write unit tests
-- [ ] Write integration tests
-- [ ] Deploy to production
+### Phase 9: Guest Draft Orders & Address Book ✅
+- [x] Add DRAFT, EXPIRED to OrderStatus enum
+- [x] Add expires_at, draft_expired_at to orders table (Flyway V8)
+- [x] Create Address entity with full CRUD (Flyway V8)
+- [x] Create AddressService (max 10/user, single default flag)
+- [x] Create AddressController (GET/POST/PUT/DELETE + PATCH default)
+- [x] Guest orders create as DRAFT with 24h expiry
+- [x] Payment webhook transitions DRAFT→PENDING
+- [x] FileService allows DRAFT uploads, blocks EXPIRED
+- [x] DraftCleanupService (cron every 10 min)
+- [x] Paginated `/api/orders/my` with status filter
+- [x] `/api/auth/profile` endpoint with counts
+- [x] Update orders & order_status_history CHECK constraints (V10, V11)
+
+### Phase 10: Testing & Deployment
+- [x] Deploy to Fly.io production
+- [x] Tests passing (15/15)
+- [ ] Write more integration tests
 - [ ] Configure CI/CD
-- [ ] Monitor and fix issues
 
 ---
 
