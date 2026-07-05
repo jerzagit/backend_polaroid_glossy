@@ -1,6 +1,10 @@
 package com.polaroid.service;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polaroid.model.Order;
+import com.polaroid.model.OrderItem;
+import com.polaroid.repository.OrderItemRepository;
 import jakarta.mail.MessagingException;
 import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
@@ -13,6 +17,7 @@ import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 
 @Service
@@ -22,6 +27,8 @@ public class EmailService {
 
     private final JavaMailSender mailSender;
     private final SpringTemplateEngine templateEngine;
+    private final OrderItemRepository orderItemRepository;
+    private final ObjectMapper objectMapper;
 
     @Value("${spring.mail.username}")
     private String fromEmail;
@@ -90,6 +97,7 @@ public class EmailService {
                 "order", order,
                 "trackingUrl", frontendUrl + "?order=" + order.getOrderNumber(),
                 "uploadUrl", frontendUrl + "?order=" + order.getOrderNumber() + "&upload=1",
+                "hasMissingUploads", hasMissingUploads(order),
                 "supportWhatsApp", supportWhatsApp,
                 "supportEmail", supportEmail
             ));
@@ -137,6 +145,27 @@ public class EmailService {
             log.info("Payment reminder sent for order {} to {}", order.getOrderNumber(), order.getCustomerEmail());
         } catch (MessagingException e) {
             log.error("Failed to send payment reminder for order {}: {}", order.getOrderNumber(), e.getMessage());
+        }
+    }
+
+    private boolean hasMissingUploads(Order order) {
+        if (order.getId() == null) return false;
+        List<OrderItem> items = orderItemRepository.findByOrderId(order.getId());
+        if (items.isEmpty()) return false;
+        int totalQuantity = items.stream().mapToInt(OrderItem::getQuantity).sum();
+        int totalUploaded = items.stream()
+            .mapToInt(item -> parseJsonStringList(item.getS3Keys()).size())
+            .sum();
+        return totalUploaded < totalQuantity;
+    }
+
+    private List<String> parseJsonStringList(String json) {
+        if (json == null || json.isBlank()) return List.of();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<String>>() {});
+        } catch (Exception e) {
+            log.warn("Failed to parse JSON list: {}", e.getMessage());
+            return List.of();
         }
     }
 }

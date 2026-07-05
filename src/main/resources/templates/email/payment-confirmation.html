@@ -54,8 +54,8 @@ Anda akan menerima notifikasi penghantaran selepas pesanan dihantar.
 </table>
 </td></tr>
 
-<!-- Upload photos callout -->
-<tr><td style="padding:20px 30px 10px;">
+<!-- Upload photos callout (only if uploads still missing) -->
+<tr th:if="${hasMissingUploads}"><td style="padding:20px 30px 10px;">
 <table width="100%" cellpadding="16" cellspacing="0" style="background:#e3f2fd;border-radius:8px;border:1px solid #90caf9;">
 <tr><td style="text-align:center;">
 <div style="font-size:36px;margin-bottom:8px;">&#128247;</div>
@@ -71,7 +71,7 @@ Order No: <strong th:text="${order.orderNumber}">PG123456789</strong>
 </table>
 </td></tr>
 
-<tr><td style="padding:0 30px 25px;text-align:center;">
+<tr th:if="${hasMissingUploads}"><td style="padding:0 30px 25px;text-align:center;">
 <a th:href="${uploadUrl}" style="display:inline-block;background:#1565c0;color:#fff;text-decoration:none;padding:14px 32px;border-radius:8px;font-size:15px;letter-spacing:1px;">
 &#128247; Upload Photos / Muat Naik Gambar
 </a>
