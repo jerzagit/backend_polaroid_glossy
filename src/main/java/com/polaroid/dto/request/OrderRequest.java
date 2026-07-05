@@ -1,8 +1,10 @@
 package com.polaroid.dto.request;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Positive;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -43,6 +45,7 @@ public class OrderRequest {
 
     private String notes;
     
+    @Valid
     @NotNull(message = "Items are required")
     private List<OrderItemRequest> items;
     
@@ -52,6 +55,7 @@ public class OrderRequest {
         private String sizeId;
         
         @NotNull(message = "Quantity is required")
+        @Positive(message = "Quantity must be positive")
         private Integer quantity;
 
         private Integer expectedImageCount;

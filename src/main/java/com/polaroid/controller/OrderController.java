@@ -65,7 +65,7 @@ public class OrderController {
 
     @PutMapping
     public ResponseEntity<?> updateOrder(
-            @RequestBody UpdateOrderRequest request,
+            @Valid @RequestBody UpdateOrderRequest request,
             Authentication authentication) {
         if (authentication == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("success", false, "error", "Authentication required"));
@@ -103,12 +103,13 @@ public class OrderController {
     }
     
     @GetMapping("/{orderNumber}")
-    public ResponseEntity<OrderResponse> getOrderByNumber(
+    public ResponseEntity<Map<String, Object>> getOrderByNumber(
             @PathVariable String orderNumber,
             @RequestParam(required = false) String email,
             Authentication authentication) {
         String userEmail = authentication != null ? authentication.getName() : null;
-        return ResponseEntity.ok(orderService.getOrderByNumber(orderNumber, userEmail, email));
+        OrderResponse order = orderService.getOrderByNumber(orderNumber, userEmail, email);
+        return ResponseEntity.ok(Map.of("success", true, "order", order));
     }
     
     @GetMapping("/my")

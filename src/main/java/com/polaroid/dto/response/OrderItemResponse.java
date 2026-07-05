@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 @Data
 @Builder
@@ -19,7 +20,7 @@ public class OrderItemResponse {
     private Integer expectedImageCount;
     private BigDecimal unitPrice;
     private BigDecimal totalPrice;
-    private String images;
-    private String customTexts;
+    private List<String> images;
+    private List<String> customTexts;
     private String s3Keys;
 }
