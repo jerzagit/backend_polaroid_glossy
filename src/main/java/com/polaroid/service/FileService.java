@@ -153,9 +153,6 @@ public class FileService {
 
     private void validateAnonymousUploadAllowed(Order order, String customerEmail, String uploadToken, String clientIp) {
         validateOrderAcceptsUpload(order);
-        if (order.getPaymentStatus() != PaymentStatus.PAID) {
-            throw new ForbiddenException("Payment must be completed before uploading files");
-        }
         if (customerEmail == null || customerEmail.isBlank()
                 || !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
             throw new ForbiddenException("Customer email does not match this order");
