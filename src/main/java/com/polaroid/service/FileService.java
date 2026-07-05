@@ -4,7 +4,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -60,12 +59,6 @@ public class FileService {
     private static final Set<String> ALLOWED_FORMATS = Set.of("jpeg", "png", "webp");
     private static final int MAX_ANONYMOUS_UPLOADS_PER_WINDOW = 10;
     private static final Duration ANONYMOUS_UPLOAD_WINDOW = Duration.ofMinutes(10);
-
-    @Value("${app.upload.allow-pending-before-payment:false}")
-    private boolean allowPendingUploadBeforePayment;
-
-    @Value("${app.payment.expiration-hours:24}")
-    private int paymentExpirationHours;
 
     private final Map<String, UploadWindow> anonymousUploadWindows = new ConcurrentHashMap<>();
 
@@ -161,13 +154,7 @@ public class FileService {
     private void validateAnonymousUploadAllowed(Order order, String customerEmail, String uploadToken, String clientIp) {
         validateOrderAcceptsUpload(order);
         if (order.getPaymentStatus() != PaymentStatus.PAID) {
-            if (!allowPendingUploadBeforePayment) {
-                throw new ForbiddenException("Payment must be completed before uploading files");
-            }
-            if (order.getCreatedAt() != null
-                    && order.getCreatedAt().isBefore(LocalDateTime.now().minusHours(paymentExpirationHours))) {
-                throw new BadRequestException("Upload window has expired for this unpaid order");
-            }
+            throw new ForbiddenException("Payment must be completed before uploading files");
         }
         if (customerEmail == null || customerEmail.isBlank()
                 || !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
