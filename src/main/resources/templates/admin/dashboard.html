@@ -20,11 +20,28 @@
         .stat-card { border-radius: 12px; padding: 20px; color: #fff; transition: transform 0.3s; }
         .stat-card:hover { transform: translateY(-5px); }
         .stat-card.total { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .stat-card.draft { background: linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%); }
         .stat-card.pending { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
         .stat-card.processing { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
         .stat-card.delivered { background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%); }
+        .stat-card.expired { background: linear-gradient(135deg, #ff9a9e 0%, #fad0c4 100%); }
+        .timeline { border-left: 2px solid #667eea; padding-left: 20px; margin: 10px 0; }
+        .timeline-item { margin-bottom: 15px; position: relative; }
+        .timeline-item::before { content: ''; width: 12px; height: 12px; background: #667eea; border-radius: 50%; position: absolute; left: -26px; top: 4px; }
+        .timeline-item .status { font-weight: bold; }
+        .timeline-item .time { font-size: 0.8rem; color: #888; }
+        .expiry-warning { background: #fff3e0; border-left: 4px solid #f57c00; padding: 10px; margin: 10px 0; border-radius: 4px; }
         .stat-number { font-size: 2.5rem; font-weight: bold; }
         .stat-label { font-size: 0.9rem; opacity: 0.9; }
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; display: inline-block; }
+        .status-DRAFT { background: #f3e5f5; color: #7b1fa2; }
+        .status-PENDING { background: #fff3e0; color: #f57c00; }
+        .status-PROCESSING { background: #e3f2fd; color: #1976d2; }
+        .status-POSTED { background: #f3e5f5; color: #7b1fa2; }
+        .status-ON_DELIVERY { background: #e8f5e9; color: #388e3c; }
+        .status-DELIVERED { background: #e0f2f1; color: #00796b; }
+        .status-CANCELLED { background: #ffebee; color: #c62828; }
+        .status-EXPIRED { background: #ef9a9a; color: #b71c1c; }
         .card-panel { border-radius: 12px; }
         .quick-actions a { margin-right: 10px; }
     </style>
@@ -68,9 +85,15 @@
                 </div>
             </div>
             <div class="col s12 m6 l3">
+                <div class="stat-card draft">
+                    <div class="stat-number" th:text="${statusCounts.get('DRAFT') != null ? statusCounts.get('DRAFT') : 0}">0</div>
+                    <div class="stat-label">Draft Orders</div>
+                </div>
+            </div>
+            <div class="col s12 m6 l3">
                 <div class="stat-card pending">
                     <div class="stat-number" th:text="${stats.pendingOrders}">0</div>
-                    <div class="stat-label">Pending Orders</div>
+                    <div class="stat-label">Pending (Unpaid)</div>
                 </div>
             </div>
             <div class="col s12 m6 l3">
@@ -79,10 +102,24 @@
                     <div class="stat-label">Processing</div>
                 </div>
             </div>
+        </div>
+        <div class="row">
             <div class="col s12 m6 l3">
                 <div class="stat-card delivered">
                     <div class="stat-number" th:text="${stats.deliveredOrders}">0</div>
                     <div class="stat-label">Delivered</div>
+                </div>
+            </div>
+            <div class="col s12 m6 l3">
+                <div class="stat-card expired">
+                    <div class="stat-number" th:text="${statusCounts.get('EXPIRED') != null ? statusCounts.get('EXPIRED') : 0}">0</div>
+                    <div class="stat-label">Expired Drafts</div>
+                </div>
+            </div>
+            <div class="col s12 m6 l3">
+                <div class="stat-card total" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <div class="stat-number" th:text="${statusCounts.get('CANCELLED') != null ? statusCounts.get('CANCELLED') : 0}">0</div>
+                    <div class="stat-label">Cancelled</div>
                 </div>
             </div>
         </div>

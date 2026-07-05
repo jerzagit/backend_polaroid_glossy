@@ -35,7 +35,7 @@ public class SecurityConfig {
         return http
             .csrf(AbstractHttpConfigurer::disable)
             .cors(cors -> cors.configurationSource(corsConfig.corsConfigurationSource()))
-            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+            .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/login", "/api/auth/register", "/api/auth/setup-admin").permitAll()
                 .requestMatchers("/api/health").permitAll()
@@ -53,9 +53,24 @@ public class SecurityConfig {
                 .requestMatchers("/api/addresses/**").authenticated()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/error").permitAll()
+                .requestMatchers("/webjars/**", "/css/**", "/js/**", "/images/**").permitAll()
+                .requestMatchers("/admin/login", "/admin/logout").permitAll()
                 .requestMatchers("/api/admin/system/**").hasRole("ADMIN")
                 .requestMatchers("/api/admin/**").hasAnyRole("ADMIN", "MARKETING", "PACKER")
                 .anyRequest().authenticated()
+            )
+            .formLogin(form -> form
+                .loginPage("/admin/login")
+                .usernameParameter("email")
+                .defaultSuccessUrl("/admin")
+                .permitAll()
+            )
+            .logout(logout -> logout
+                .logoutUrl("/admin/logout")
+                .logoutSuccessUrl("/admin/login?logout")
+                .invalidateHttpSession(true)
+                .deleteCookies("JSESSIONID")
+                .permitAll()
             )
             .authenticationProvider(authenticationProvider())
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
