@@ -5,6 +5,8 @@ import com.polaroid.dto.request.RegisterRequest;
 import com.polaroid.dto.response.AuthResponse;
 import com.polaroid.dto.response.UserResponse;
 import com.polaroid.model.enums.Role;
+import com.polaroid.repository.AddressRepository;
+import com.polaroid.repository.OrderRepository;
 import com.polaroid.service.AuthService;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,6 +24,8 @@ import java.util.Map;
 public class AuthController {
     
     private final AuthService authService;
+    private final OrderRepository orderRepository;
+    private final AddressRepository addressRepository;
 
     @Value("${app.setup-admin.enabled:false}")
     private boolean setupAdminEnabled;
@@ -67,5 +71,21 @@ public class AuthController {
     @GetMapping("/me")
     public ResponseEntity<UserResponse> getCurrentUser(Authentication authentication) {
         return ResponseEntity.ok(authService.getCurrentUser(authentication.getName()));
+    }
+
+    @GetMapping("/profile")
+    public ResponseEntity<Map<String, Object>> getProfile(Authentication authentication) {
+        UserResponse user = authService.getCurrentUser(authentication.getName());
+        com.polaroid.model.User dbUser = authService.findByEmail(authentication.getName());
+        long orderCount = orderRepository.countByUserId(dbUser.getId());
+        long draftCount = orderRepository.countByUserIdAndStatus(dbUser.getId(), com.polaroid.model.enums.OrderStatus.DRAFT);
+        long addressCount = addressRepository.countByUserId(dbUser.getId());
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "user", user,
+                "orderCount", orderCount,
+                "draftCount", draftCount,
+                "addressCount", addressCount
+        ));
     }
 }

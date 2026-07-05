@@ -179,6 +179,11 @@ public class AuthService {
     }
     
     @Transactional
+    public User findByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new BadRequestException("User not found"));
+    }
+
     public AuthResponse registerAsAdmin(RegisterRequest request) {
         if (userRepository.existsByEmail(request.getEmail())) {
             throw new BadRequestException("Email already registered");

@@ -3,6 +3,7 @@ package com.polaroid.controller;
 import com.polaroid.dto.request.OrderRequest;
 import com.polaroid.dto.request.UpdateOrderRequest;
 import com.polaroid.dto.response.OrderResponse;
+import com.polaroid.model.enums.OrderStatus;
 import com.polaroid.model.enums.PaymentStatus;
 import com.polaroid.service.OrderService;
 import com.polaroid.service.PaymentService;
@@ -111,19 +112,28 @@ public class OrderController {
     }
     
     @GetMapping("/my")
-    public ResponseEntity<Page<OrderResponse>> getMyOrders(
+    public ResponseEntity<Map<String, Object>> getMyOrders(
             Authentication authentication,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size,
             @RequestParam(defaultValue = "createdAt") String sortBy,
-            @RequestParam(defaultValue = "desc") String sortDir) {
+            @RequestParam(defaultValue = "desc") String sortDir,
+            @RequestParam(required = false) OrderStatus status) {
         
         Sort sort = sortDir.equalsIgnoreCase("asc")
                 ? Sort.by(sortBy).ascending()
                 : Sort.by(sortBy).descending();
         Pageable pageable = PageRequest.of(page, size, sort);
         
-        return ResponseEntity.ok(orderService.getUserOrders(authentication.getName(), pageable));
+        Page<OrderResponse> orders = orderService.getUserOrders(authentication.getName(), pageable, status);
+        return ResponseEntity.ok(Map.of(
+                "success", true,
+                "orders", orders.getContent(),
+                "totalPages", orders.getTotalPages(),
+                "totalElements", orders.getTotalElements(),
+                "page", page,
+                "size", size
+        ));
     }
     
     @PostMapping("/{orderNumber}/pay")

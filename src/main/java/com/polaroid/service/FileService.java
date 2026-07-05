@@ -180,7 +180,9 @@ public class FileService {
     }
 
     private void validateOrderAcceptsUpload(Order order) {
-        if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.REFUNDED) {
+        if (order.getStatus() == OrderStatus.CANCELLED
+                || order.getStatus() == OrderStatus.REFUNDED
+                || order.getStatus() == OrderStatus.EXPIRED) {
             throw new BadRequestException("Cannot upload files to a closed order");
         }
         if (order.getStatus() == OrderStatus.POSTED

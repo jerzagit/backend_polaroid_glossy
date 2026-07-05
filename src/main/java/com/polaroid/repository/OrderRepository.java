@@ -23,9 +23,13 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
     Optional<Order> findByToyyibpayRef(String toyyibpayRef);
     
     Page<Order> findByUserId(UUID userId, Pageable pageable);
+    Page<Order> findByUserIdAndStatus(UUID userId, OrderStatus status, Pageable pageable);
     Page<Order> findByAffiliateId(UUID affiliateId, Pageable pageable);
     Page<Order> findByStatus(OrderStatus status, Pageable pageable);
     Page<Order> findByPaymentStatus(PaymentStatus paymentStatus, Pageable pageable);
+    long countByUserId(UUID userId);
+    long countByUserIdAndStatus(UUID userId, OrderStatus status);
+    List<Order> findByStatusAndExpiresAtBefore(OrderStatus status, LocalDateTime expiresAt);
     
     @Query("SELECT o FROM Order o WHERE " +
            "(:status IS NULL OR o.status = :status) AND " +

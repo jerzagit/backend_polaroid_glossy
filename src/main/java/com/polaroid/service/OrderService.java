@@ -18,6 +18,7 @@ import com.polaroid.repository.PrintSizeRepository;
 import com.polaroid.repository.UserRepository;
 import com.polaroid.dto.mapper.OrderMapper;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +37,7 @@ import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class OrderService {
     
     private final OrderRepository orderRepository;
@@ -50,6 +52,9 @@ public class OrderService {
 
     @Value("${app.upload.token-expiration-hours:168}")
     private int uploadTokenExpirationHours;
+
+    @Value("${app.draft.expiration-hours:24}")
+    private int draftExpirationHours;
     
     @Transactional
     public OrderResponse createOrder(OrderRequest request, String userEmail) {
@@ -91,6 +96,9 @@ public class OrderService {
 
         String uploadToken = user == null ? generateUploadToken() : null;
 
+        boolean isGuest = user == null;
+        OrderStatus initialStatus = isGuest ? OrderStatus.DRAFT : OrderStatus.PENDING;
+
         Order order = Order.builder()
                 .orderNumber(generateOrderNumber())
                 .userId(user != null ? user.getId() : null)
@@ -106,11 +114,12 @@ public class OrderService {
                 .customerState(request.getCustomerState())
                 .customerCountry("Malaysia")
                 .notes(request.getNotes())
-                .status(OrderStatus.PENDING)
+                .status(initialStatus)
                 .paymentStatus(PaymentStatus.PENDING)
                 .subtotal(subtotal)
                 .shipping(shipping)
                 .total(subtotal.add(shipping))
+                .expiresAt(isGuest ? LocalDateTime.now().plusHours(draftExpirationHours) : null)
                 .uploadTokenHash(uploadToken != null ? hashUploadToken(uploadToken) : null)
                 .uploadTokenExpiresAt(uploadToken != null ? LocalDateTime.now().plusHours(uploadTokenExpirationHours) : null)
                 .items(orderItems)
@@ -120,7 +129,7 @@ public class OrderService {
         
         Order savedOrder = orderRepository.save(order);
         
-        addStatusHistory(savedOrder, OrderStatus.PENDING, "Order created");
+        addStatusHistory(savedOrder, initialStatus, isGuest ? "Draft order created" : "Order created");
 
         emailService.sendOrderConfirmation(savedOrder);
         
@@ -159,6 +168,32 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("User not found"));
         return orderRepository.findByUserId(user.getId(), pageable)
                 .map(orderMapper::toDto);
+    }
+
+    public Page<OrderResponse> getUserOrders(String userEmail, Pageable pageable, OrderStatus status) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new ResourceNotFoundException("User not found"));
+        if (status != null) {
+            return orderRepository.findByUserIdAndStatus(user.getId(), status, pageable)
+                    .map(orderMapper::toDto);
+        }
+        return orderRepository.findByUserId(user.getId(), pageable)
+                .map(orderMapper::toDto);
+    }
+
+    @Transactional
+    public void expireDraftOrders() {
+        List<Order> expiredDrafts = orderRepository.findByStatusAndExpiresAtBefore(
+                OrderStatus.DRAFT, LocalDateTime.now());
+        for (Order order : expiredDrafts) {
+            order.setStatus(OrderStatus.EXPIRED);
+            order.setDraftExpiredAt(LocalDateTime.now());
+            orderRepository.save(order);
+            addStatusHistory(order, OrderStatus.EXPIRED, "Draft expired without payment");
+        }
+        if (!expiredDrafts.isEmpty()) {
+            log.info("Expired {} draft orders", expiredDrafts.size());
+        }
     }
     
     public Page<OrderResponse> getOrdersWithFilters(
@@ -251,6 +286,10 @@ public class OrderService {
         order.setPaymentStatus(status);
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
+            if (order.getStatus() == OrderStatus.DRAFT) {
+                order.setStatus(OrderStatus.PENDING);
+                order.setExpiresAt(null);
+            }
             addStatusHistory(order, order.getStatus(), "Payment received");
             emailService.sendPaymentConfirmation(order);
         }

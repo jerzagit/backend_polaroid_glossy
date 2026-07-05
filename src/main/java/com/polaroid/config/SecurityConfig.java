@@ -49,6 +49,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/toyyibpay/create-bill").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/files/upload").permitAll()
                 .requestMatchers("/api/auth/google").permitAll()
+                .requestMatchers("/api/auth/profile").authenticated()
+                .requestMatchers("/api/addresses/**").authenticated()
                 .requestMatchers("/swagger-ui/**", "/v3/api-docs/**").permitAll()
                 .requestMatchers("/error").permitAll()
                 .requestMatchers("/api/admin/system/**").hasRole("ADMIN")

@@ -59,6 +59,8 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .cancelledAt(entity.getCancelledAt())
                 .cancelReason(entity.getCancelReason())
                 .notes(entity.getNotes())
+                .expiresAt(entity.getExpiresAt())
+                .draftExpiredAt(entity.getDraftExpiredAt())
                 .items(itemResponses)
                 .statusHistory(historyResponses)
                 .createdAt(entity.getCreatedAt())
