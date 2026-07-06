@@ -47,10 +47,10 @@ public class OrderController {
     public ResponseEntity<?> getOrders(
             @RequestParam(required = false) String userId,
             @RequestParam(required = false) String orderNumber,
-            Authentication authentication) {
+        Authentication authentication) {
         if (orderNumber != null && !orderNumber.isBlank()) {
             OrderResponse order = orderService.getOrderByNumber(orderNumber, authentication != null ? authentication.getName() : null, null);
-            return ResponseEntity.ok(Map.of("success", true, "orders", List.of(order)));
+            return ResponseEntity.ok(Map.of("success", true, "order", order, "orders", List.of(order)));
         }
         if (userId != null && !userId.isBlank()) {
             List<OrderResponse> orders = orderService.getOrdersByUserId(UUID.fromString(userId));

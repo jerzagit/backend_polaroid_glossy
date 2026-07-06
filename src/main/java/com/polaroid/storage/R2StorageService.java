@@ -105,14 +105,13 @@ public class R2StorageService implements StorageService {
             ResponseEntity<Map> response = restTemplate.exchange(uri, HttpMethod.GET, entity, Map.class);
 
             if (response.getBody() != null && response.getBody().containsKey("result")) {
-                Map<String, Object> result = (Map<String, Object>) response.getBody().get("result");
-                if (result != null && result.containsKey("objects")) {
-                    List<Map<String, Object>> objects = (List<Map<String, Object>>) result.get("objects");
-                    for (Map<String, Object> obj : objects) {
-                        String objectKey = (String) obj.get("key");
-                        String name = objectKey.substring(objectKey.lastIndexOf('/') + 1);
-                        files.add(new StorageFileInfo(name, objectKey, getObjectUrl(objectKey)));
+                List<Map<String, Object>> objects = extractObjects(response.getBody().get("result"));
+                for (Map<String, Object> obj : objects) {
+                    if (!(obj.get("key") instanceof String objectKey) || objectKey.isBlank()) {
+                        continue;
                     }
+                    String name = objectKey.substring(objectKey.lastIndexOf('/') + 1);
+                    files.add(new StorageFileInfo(name, objectKey, getObjectUrl(objectKey)));
                 }
             }
         } catch (Exception e) {
@@ -162,6 +161,32 @@ public class R2StorageService implements StorageService {
 
     private URI objectsUri(String key) {
         return URI.create(apiBase + "/objects/" + key.replace("/", "%2F"));
+    }
+
+    private List<Map<String, Object>> extractObjects(Object result) {
+        if (result instanceof List<?>) {
+            return mapEntries((List<?>) result);
+        }
+        if (result instanceof Map<?, ?> resultMap && resultMap.get("objects") instanceof List<?>) {
+            return mapEntries((List<?>) resultMap.get("objects"));
+        }
+        return List.of();
+    }
+
+    private List<Map<String, Object>> mapEntries(List<?> entries) {
+        List<Map<String, Object>> objects = new ArrayList<>();
+        for (Object entry : entries) {
+            if (entry instanceof Map<?, ?> map) {
+                Map<String, Object> object = new java.util.HashMap<>();
+                for (Map.Entry<?, ?> mapEntry : map.entrySet()) {
+                    if (mapEntry.getKey() instanceof String key) {
+                        object.put(key, mapEntry.getValue());
+                    }
+                }
+                objects.add(object);
+            }
+        }
+        return objects;
     }
 
     private String getObjectUrl(String key) {
