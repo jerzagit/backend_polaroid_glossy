@@ -60,6 +60,7 @@ public class FileService {
     private static final Set<String> ALLOWED_FORMATS = Set.of("jpeg", "png", "webp");
     private static final int MAX_ANONYMOUS_UPLOADS_PER_WINDOW = 10;
     private static final Duration ANONYMOUS_UPLOAD_WINDOW = Duration.ofMinutes(10);
+    private static final int IMAGE_URL_EXPIRATION_SECONDS = 300;
 
     private final Map<String, UploadWindow> anonymousUploadWindows = new ConcurrentHashMap<>();
 
@@ -94,16 +95,15 @@ public class FileService {
         try {
             String contentType = isJpeg ? "image/jpeg" : "image/png";
             storageService.upload(key, processedImage, contentType);
-            String signedUrl = storageService.getSignedUrl(key, 3600);
+            String signedUrl = storageService.getSignedUrl(key, IMAGE_URL_EXPIRATION_SECONDS);
 
-            persistUploadedFile(item, key, signedUrl);
+            persistUploadedFile(item, key);
             invalidateUploadTokenIfComplete(order);
 
             int uploadedCount = readJsonStringList(item.getS3Keys()).size();
             int expectedCount = expectedImageCount(item);
 
             Map<String, Object> result = new HashMap<>();
-            result.put("key", key);
             result.put("url", signedUrl);
             result.put("fileName", fileName);
             result.put("orderItemId", item.getId().toString());
@@ -118,8 +118,8 @@ public class FileService {
         }
     }
 
-    private void persistUploadedFile(OrderItem item, String key, String url) {
-        item.setImages(appendJsonString(item.getImages(), url));
+    private void persistUploadedFile(OrderItem item, String key) {
+        item.setImages(appendJsonString(item.getImages(), key));
         item.setS3Keys(appendJsonString(item.getS3Keys(), key));
         orderItemRepository.save(item);
     }
@@ -329,7 +329,7 @@ public class FileService {
                 Map<String, String> fileInfo = new HashMap<>();
                 fileInfo.put("name", fileNameFromKey(key));
                 fileInfo.put("key", key);
-                fileInfo.put("url", storageService.getSignedUrl(key, 3600));
+                fileInfo.put("url", storageService.getSignedUrl(key, IMAGE_URL_EXPIRATION_SECONDS));
                 files.add(fileInfo);
             }
             return files;

@@ -27,7 +27,6 @@ export interface OrderItem {
   totalPrice: number;
   images: string[];
   customTexts: string[];
-  s3Keys: string[];
   createdAt: string;
 }
 

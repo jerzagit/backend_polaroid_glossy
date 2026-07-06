@@ -25,6 +25,7 @@ import java.util.Map;
 @ConditionalOnProperty(name = "app.storage.provider", havingValue = "r2")
 @Slf4j
 public class R2StorageService implements StorageService {
+    private static final int DEFAULT_SIGNED_URL_EXPIRATION_SECONDS = 300;
 
     @Value("${app.storage.r2.account-id}")
     private String accountId;
@@ -34,9 +35,6 @@ public class R2StorageService implements StorageService {
 
     @Value("${app.storage.r2.bucket}")
     private String bucketName;
-
-    @Value("${app.storage.r2.public-url:}")
-    private String publicUrl;
 
     @Value("${app.storage.r2.s3-endpoint:}")
     private String s3Endpoint;
@@ -143,7 +141,7 @@ public class R2StorageService implements StorageService {
                         continue;
                     }
                     String name = objectKey.substring(objectKey.lastIndexOf('/') + 1);
-                    files.add(new StorageFileInfo(name, objectKey, getSignedUrl(objectKey, 3600)));
+                    files.add(new StorageFileInfo(name, objectKey, getSignedUrl(objectKey, DEFAULT_SIGNED_URL_EXPIRATION_SECONDS)));
                 }
             }
         } catch (Exception e) {
@@ -154,23 +152,20 @@ public class R2StorageService implements StorageService {
 
     @Override
     public String getSignedUrl(String key, int expirationSeconds) {
-        if (hasPublicUrl()) {
-            return publicObjectUrl(key);
+        if (presigner == null) {
+            throw new IllegalStateException("R2 signed URL credentials are not configured");
         }
 
-        if (presigner != null) {
-            try {
-                var presignRequest = GetObjectPresignRequest.builder()
-                        .signatureDuration(Duration.ofSeconds(expirationSeconds))
-                        .getObjectRequest(request -> request.bucket(bucketName).key(key))
-                        .build();
-                return presigner.presignGetObject(presignRequest).url().toString();
-            } catch (Exception e) {
-                log.warn("Failed to create signed R2 URL for {}: {}", key, e.getMessage());
-            }
+        try {
+            var presignRequest = GetObjectPresignRequest.builder()
+                    .signatureDuration(Duration.ofSeconds(expirationSeconds))
+                    .getObjectRequest(request -> request.bucket(bucketName).key(key))
+                    .build();
+            return presigner.presignGetObject(presignRequest).url().toString();
+        } catch (Exception e) {
+            log.warn("Failed to create signed R2 URL for {}: {}", key, e.getMessage());
+            throw new RuntimeException("Failed to create signed R2 URL", e);
         }
-
-        return getObjectUrl(key);
     }
 
     @Override
@@ -262,22 +257,6 @@ public class R2StorageService implements StorageService {
     }
 
     private String getObjectUrl(String key) {
-        if (hasPublicUrl()) {
-            return publicObjectUrl(key);
-        }
         return apiBase + "/objects/" + key.replace("/", "%2F");
-    }
-
-    private boolean hasPublicUrl() {
-        if (publicUrl == null || publicUrl.isBlank()) {
-            return false;
-        }
-        String normalized = publicUrl.toLowerCase();
-        return !normalized.contains("r2.cloudflarestorage.com")
-                && !normalized.contains("api.cloudflare.com");
-    }
-
-    private String publicObjectUrl(String key) {
-        return publicUrl.replaceAll("/+$", "") + "/" + key;
     }
 }

@@ -20,6 +20,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Slf4j
 public class OrderMapper implements EntityMapper<Order, OrderResponse> {
+    private static final int IMAGE_URL_EXPIRATION_SECONDS = 300;
+
     private final ObjectMapper objectMapper;
     private final StorageService storageService;
     
@@ -112,7 +114,6 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .totalPrice(item.getTotalPrice())
                 .images(freshImageUrls(item))
                 .customTexts(readJsonStringList(item.getCustomTexts()))
-                .s3Keys(item.getS3Keys())
                 .build();
     }
 
@@ -131,7 +132,7 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
         if (keyOrUrl.startsWith("http://") || keyOrUrl.startsWith("https://")) {
             return keyOrUrl;
         }
-        return storageService.getSignedUrl(keyOrUrl, 3600);
+        return storageService.getSignedUrl(keyOrUrl, IMAGE_URL_EXPIRATION_SECONDS);
     }
 
     private List<String> readJsonStringList(String json) {

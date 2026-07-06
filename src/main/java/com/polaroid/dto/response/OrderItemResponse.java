@@ -22,5 +22,4 @@ public class OrderItemResponse {
     private BigDecimal totalPrice;
     private List<String> images;
     private List<String> customTexts;
-    private String s3Keys;
 }
