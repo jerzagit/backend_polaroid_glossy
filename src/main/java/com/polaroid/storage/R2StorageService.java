@@ -1,14 +1,22 @@
 package com.polaroid.storage;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 
 import java.net.URI;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -30,14 +38,38 @@ public class R2StorageService implements StorageService {
     @Value("${app.storage.r2.public-url:}")
     private String publicUrl;
 
+    @Value("${app.storage.r2.s3-endpoint:}")
+    private String s3Endpoint;
+
+    @Value("${app.storage.r2.region:auto}")
+    private String region;
+
+    @Value("${app.storage.r2.access-key:}")
+    private String accessKey;
+
+    @Value("${app.storage.r2.secret-key:}")
+    private String secretKey;
+
+    @Value("${app.storage.r2.path-style:true}")
+    private boolean pathStyleAccess;
+
     private final RestTemplate restTemplate = new RestTemplate();
 
     private String apiBase;
+    private S3Presigner presigner;
 
     @PostConstruct
     public void init() {
         apiBase = "https://api.cloudflare.com/client/v4/accounts/" + accountId + "/r2/buckets/" + bucketName;
+        initPresigner();
         log.info("R2StorageService initialized for account: {}", accountId);
+    }
+
+    @PreDestroy
+    public void destroy() {
+        if (presigner != null) {
+            presigner.close();
+        }
     }
 
     private HttpHeaders authHeaders() {
@@ -111,7 +143,7 @@ public class R2StorageService implements StorageService {
                         continue;
                     }
                     String name = objectKey.substring(objectKey.lastIndexOf('/') + 1);
-                    files.add(new StorageFileInfo(name, objectKey, getObjectUrl(objectKey)));
+                    files.add(new StorageFileInfo(name, objectKey, getSignedUrl(objectKey, 3600)));
                 }
             }
         } catch (Exception e) {
@@ -122,6 +154,22 @@ public class R2StorageService implements StorageService {
 
     @Override
     public String getSignedUrl(String key, int expirationSeconds) {
+        if (hasPublicUrl()) {
+            return publicObjectUrl(key);
+        }
+
+        if (presigner != null) {
+            try {
+                var presignRequest = GetObjectPresignRequest.builder()
+                        .signatureDuration(Duration.ofSeconds(expirationSeconds))
+                        .getObjectRequest(request -> request.bucket(bucketName).key(key))
+                        .build();
+                return presigner.presignGetObject(presignRequest).url().toString();
+            } catch (Exception e) {
+                log.warn("Failed to create signed R2 URL for {}: {}", key, e.getMessage());
+            }
+        }
+
         return getObjectUrl(key);
     }
 
@@ -163,6 +211,30 @@ public class R2StorageService implements StorageService {
         return URI.create(apiBase + "/objects/" + key.replace("/", "%2F"));
     }
 
+    private void initPresigner() {
+        if (accessKey == null || accessKey.isBlank() || secretKey == null || secretKey.isBlank()) {
+            log.info("R2 S3 credentials are not configured; signed object URLs are disabled");
+            return;
+        }
+
+        String endpoint = s3Endpoint != null && !s3Endpoint.isBlank()
+                ? s3Endpoint
+                : "https://" + accountId + ".r2.cloudflarestorage.com";
+
+        var credentialsProvider = StaticCredentialsProvider.create(
+                AwsBasicCredentials.create(accessKey, secretKey));
+        var s3Config = S3Configuration.builder()
+                .pathStyleAccessEnabled(pathStyleAccess)
+                .build();
+
+        presigner = S3Presigner.builder()
+                .endpointOverride(URI.create(endpoint))
+                .region(Region.of(region))
+                .credentialsProvider(credentialsProvider)
+                .serviceConfiguration(s3Config)
+                .build();
+    }
+
     private List<Map<String, Object>> extractObjects(Object result) {
         if (result instanceof List<?>) {
             return mapEntries((List<?>) result);
@@ -190,9 +262,22 @@ public class R2StorageService implements StorageService {
     }
 
     private String getObjectUrl(String key) {
-        if (publicUrl != null && !publicUrl.isBlank()) {
-            return publicUrl + "/" + key;
+        if (hasPublicUrl()) {
+            return publicObjectUrl(key);
         }
         return apiBase + "/objects/" + key.replace("/", "%2F");
+    }
+
+    private boolean hasPublicUrl() {
+        if (publicUrl == null || publicUrl.isBlank()) {
+            return false;
+        }
+        String normalized = publicUrl.toLowerCase();
+        return !normalized.contains("r2.cloudflarestorage.com")
+                && !normalized.contains("api.cloudflare.com");
+    }
+
+    private String publicObjectUrl(String key) {
+        return publicUrl.replaceAll("/+$", "") + "/" + key;
     }
 }
