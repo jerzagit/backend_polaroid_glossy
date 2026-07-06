@@ -74,4 +74,10 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
     List<Order> findByPaymentStatusAndPaidAtBetween(PaymentStatus paymentStatus, LocalDateTime from, LocalDateTime to);
 
     List<Order> findByPaymentStatusAndCreatedAtBefore(PaymentStatus paymentStatus, LocalDateTime createdAt);
+
+    @Query("SELECT o FROM Order o WHERE o.paymentProofUrl IS NOT NULL")
+    List<Order> findWithPaymentProof();
+
+    @Query("SELECT o FROM Order o WHERE o.paymentProofUrl IS NOT NULL AND o.paymentStatus = :paymentStatus")
+    Page<Order> findWithPaymentProofAndPaymentStatus(@Param("paymentStatus") PaymentStatus paymentStatus, Pageable pageable);
 }

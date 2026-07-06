@@ -4,6 +4,7 @@ import com.polaroid.dto.request.OrderStatusUpdateRequest;
 import com.polaroid.dto.request.PrintSizeRequest;
 import com.polaroid.dto.request.UpdatePaymentStatusRequest;
 import com.polaroid.dto.request.UserRoleUpdateRequest;
+import com.polaroid.dto.request.VerifyPaymentRequest;
 import com.polaroid.dto.response.OrderResponse;
 import com.polaroid.dto.response.PrintSizeResponse;
 import com.polaroid.dto.response.StatsOverviewResponse;
@@ -139,6 +140,15 @@ public class AdminController {
             @PathVariable UUID id,
             @Valid @RequestBody UpdatePaymentStatusRequest request) {
         return ResponseEntity.ok(orderService.updatePaymentStatusForAdmin(id, request.getPaymentStatus()));
+    }
+
+    @PostMapping("/orders/{orderNumber}/verify-payment")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING')")
+    public ResponseEntity<OrderResponse> verifyPayment(
+            @PathVariable String orderNumber,
+            @Valid @RequestBody VerifyPaymentRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(orderService.verifyPayment(orderNumber, request, authentication.getName()));
     }
     
     @GetMapping("/users")

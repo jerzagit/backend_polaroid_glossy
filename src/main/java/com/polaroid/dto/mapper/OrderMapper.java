@@ -59,6 +59,8 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .status(entity.getStatus())
                 .paymentStatus(entity.getPaymentStatus())
                 .paymentMethod(entity.getPaymentMethod())
+                .paymentProofUrl(entity.getPaymentProofUrl())
+                .paymentReference(entity.getPaymentReference())
                 .toyyibpayRef(entity.getToyyibpayRef())
                 .subtotal(entity.getSubtotal())
                 .shipping(entity.getShipping())

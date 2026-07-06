@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polaroid.dto.request.OrderRequest;
 import com.polaroid.dto.request.UpdateOrderRequest;
+import com.polaroid.dto.request.VerifyPaymentRequest;
 import com.polaroid.dto.response.OrderResponse;
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
@@ -335,6 +336,33 @@ public class OrderService {
             order.setPaidAt(LocalDateTime.now());
         }
         addStatusHistory(order, order.getStatus(), message);
+
+        return orderMapper.toDto(orderRepository.save(order));
+    }
+
+    @Transactional
+    public OrderResponse verifyPayment(String orderNumber, VerifyPaymentRequest request, String adminEmail) {
+        Order order = orderRepository.findByOrderNumber(orderNumber)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderNumber));
+
+        String action = request.getAction().toUpperCase();
+
+        switch (action) {
+            case "APPROVE" -> {
+                order.setPaymentStatus(PaymentStatus.PAID);
+                order.setStatus(OrderStatus.PROCESSING);
+                order.setPaidAt(LocalDateTime.now());
+                addStatusHistory(order, OrderStatus.PROCESSING, "Payment verified and approved by " + adminEmail);
+                emailService.sendPaymentConfirmation(order);
+            }
+            case "REJECT" -> {
+                order.setPaymentProofUrl(null);
+                order.setPaymentReference(null);
+                String reason = request.getReason() != null ? request.getReason() : "Payment proof rejected";
+                addStatusHistory(order, order.getStatus(), "Payment rejected: " + reason + " (by " + adminEmail + ")");
+            }
+            default -> throw new BadRequestException("Invalid action: " + action + ". Use APPROVE or REJECT.");
+        }
 
         return orderMapper.toDto(orderRepository.save(order));
     }
