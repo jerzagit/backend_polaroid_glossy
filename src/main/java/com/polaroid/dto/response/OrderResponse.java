@@ -33,6 +33,8 @@ public class OrderResponse {
     private OrderStatus status;
     private PaymentStatus paymentStatus;
     private String paymentMethod;
+    private String paymentProofUrl;
+    private String paymentReference;
     private String toyyibpayRef;
     private BigDecimal subtotal;
     private BigDecimal shipping;

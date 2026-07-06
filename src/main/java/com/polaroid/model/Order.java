@@ -77,7 +77,13 @@ public class Order extends Auditable {
     
     @Column(name = "payment_method")
     private String paymentMethod;
-    
+
+    @Column(name = "payment_proof_url")
+    private String paymentProofUrl;
+
+    @Column(name = "payment_reference")
+    private String paymentReference;
+
     @Column(name = "toyyibpay_ref")
     private String toyyibpayRef;
     
