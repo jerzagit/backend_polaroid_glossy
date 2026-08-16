@@ -1,0 +1,9 @@
+[build]
+  command = "npm run build"
+  base = "/frontend"
+
+[build.environment]
+  NEXT_PUBLIC_API_URL = "https://polaroid-glossy-backend.fly.dev/api"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

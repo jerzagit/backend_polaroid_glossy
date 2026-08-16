@@ -42,3 +42,6 @@ frontend/.env*.local
 
 # Dependencies
 node_modules/
+
+# Local Netlify folder
+.netlify
