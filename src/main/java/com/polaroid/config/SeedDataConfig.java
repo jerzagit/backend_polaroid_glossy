@@ -26,8 +26,11 @@ public class SeedDataConfig {
     CommandLineRunner seedPrintSizes() {
         return args -> {
             for (var size : List.of(
-                    printSize("2r", "2R", "2R (2.5 x 3.5 inches)", "2.5", "3.5", "0.50", "Wallet size - Perfect for keepsakes", "MINI"),
-                    printSize("3r", "3R", "3R (3.5 x 5 inches)", "3.5", "5", "0.75", "Standard photo size - Great for albums", "CLASSIC"),
+                    printSize("ic", "IC Size", "IC Size (5.5 × 8 cm)", "5.5", "8", "4.50", "Malaysia IC size - discounted quantity packs", "IC"),
+                    printSize("polaroid-mini", "Polaroid Mini", "Polaroid Mini (5.0 × 8.9 cm)", "5", "8.9", "3.60", "Compact mini format - discounted quantity packs", "MINI"),
+                    printSize("2r-no-border", "2R No Border", "2R No Border (6.3 × 8.9 cm)", "6.3", "8.9", "6.30", "Full-colour card without white border", "2R NO BORDER"),
+                    printSize("2r-border", "2R Border", "2R Border (6.3 × 8.9 cm)", "6.3", "8.9", "5.85", "White-border Polaroid style", "2R BORDER"),
+                    printSize("3r-no-border", "3R No Border", "3R No Border (8.9 × 12.7 cm)", "8.9", "12.7", "7.20", "Full-colour card without white border", "3R NO BORDER"),
                     printSize("4r", "4R", "4R (4 x 6 inches)", "4", "6", "1.00", "Most popular - Classic polaroid style", "BESTSELLER"),
                     printSize("a4", "A4", "A4 (8.3 x 11.7 inches)", "8.3", "11.7", "3.50", "Poster size - Perfect for displays", "PREMIUM")
             )) {
