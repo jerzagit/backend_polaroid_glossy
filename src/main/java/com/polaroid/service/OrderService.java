@@ -93,11 +93,11 @@ public class OrderService {
             subtotal = subtotal.add(itemTotal);
             
             OrderItem item = OrderItem.builder()
-                    .sizeId(printSize.getId())
-                    .sizeName(printSize.getDisplayName())
+                    .sizeId(printSize != null ? printSize.getId() : sizeId)
+                    .sizeName(sizeName)
                     .quantity(itemReq.getQuantity())
                     .expectedImageCount(expectedImageCount(itemReq))
-                    .unitPrice(printSize.getPrice())
+                    .unitPrice(unitPrice)
                     .totalPrice(itemTotal)
                     .images(formatJsonArray(itemReq.getImageUrls()))
                     .s3Keys(formatJsonArray(itemReq.getImageUrls()))
