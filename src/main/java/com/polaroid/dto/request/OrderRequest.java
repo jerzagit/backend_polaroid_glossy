@@ -44,7 +44,18 @@ public class OrderRequest {
     private String affiliateCode;
 
     private String notes;
-    
+
+    /**
+     * Frontend-computed amounts (single source of truth for tiered pricing).
+     * When present the backend stores these as-is instead of recomputing from
+     * the legacy print_sizes table, so new catalog ids that aren't seeded in
+     * the DB no longer break checkout (and the ToyyibPay bill total matches
+     * exactly what the customer was quoted).
+     */
+    private BigDecimal subtotal;
+    private BigDecimal shipping;
+    private BigDecimal total;
+
     @Valid
     @NotNull(message = "Items are required")
     private List<OrderItemRequest> items;

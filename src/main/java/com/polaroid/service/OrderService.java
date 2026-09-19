@@ -77,10 +77,19 @@ public class OrderService {
         
         for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
             String sizeId = normalizeSizeId(itemReq.getSizeId());
-            PrintSize printSize = printSizeRepository.findById(sizeId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + sizeId));
+            PrintSize printSize = printSizeRepository.findById(sizeId).orElse(null);
             
-            BigDecimal itemTotal = printSize.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
+            String sizeName = itemReq.getSizeName() != null && !itemReq.getSizeName().isBlank()
+                    ? itemReq.getSizeName()
+                    : (printSize != null ? printSize.getDisplayName() : sizeId);
+            BigDecimal unitPrice = itemReq.getUnitPrice() != null
+                    ? itemReq.getUnitPrice()
+                    : (printSize != null ? printSize.getPrice() : null);
+            if (unitPrice == null) {
+                throw new BadRequestException("No price available for print size: " + sizeId);
+            }
+            
+            BigDecimal itemTotal = unitPrice.multiply(BigDecimal.valueOf(itemReq.getQuantity()));
             subtotal = subtotal.add(itemTotal);
             
             OrderItem item = OrderItem.builder()
