@@ -73,5 +73,8 @@ public class OrderRequest {
         
         private List<String> imageUrls;
         private List<String> customTexts;
+
+        private String sizeName;
+        private BigDecimal unitPrice;
     }
 }
