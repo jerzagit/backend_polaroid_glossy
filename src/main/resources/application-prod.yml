@@ -62,7 +62,7 @@ app:
     r2:
       account-id: ${STORAGE_R2_ACCOUNT_ID}
       api-token: ${STORAGE_R2_API_TOKEN}
-      bucket: ${STORAGE_R2_BUCKET:polaroid-glossy}
+      bucket: ${STORAGE_R2_BUCKET:bucketpolaroidglossy2026}
       s3-endpoint: ${STORAGE_R2_S3_ENDPOINT:}
       region: ${STORAGE_R2_REGION:auto}
       access-key: ${STORAGE_R2_ACCESS_KEY:}

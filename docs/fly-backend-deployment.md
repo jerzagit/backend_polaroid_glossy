@@ -39,6 +39,15 @@ flyctl secrets set \
   TOYYIBPAY_RETURN_URL='https://<frontend-domain>/payment-status' \
   TOYYIBPAY_CALLBACK_URL='https://polaroid-glossy-backend.fly.dev/api/webhooks/toyyibpay' \
   CORS_ORIGINS='https://<frontend-domain>,https://<seller-dashboard-domain>' \
+  STORAGE_PROVIDER='r2' \
+  STORAGE_R2_ACCOUNT_ID='<cloudflare-account-id>' \
+  STORAGE_R2_API_TOKEN='<cloudflare-r2-api-token>' \
+  STORAGE_R2_BUCKET='bucketpolaroidglossy2026' \
+  STORAGE_R2_S3_ENDPOINT='' \
+  STORAGE_R2_REGION='auto' \
+  STORAGE_R2_ACCESS_KEY='<r2-access-key>' \
+  STORAGE_R2_SECRET_KEY='<r2-secret-key>' \
+  STORAGE_R2_PATH_STYLE='true' \
   --app polaroid-glossy-backend
 ```
 
@@ -51,6 +60,9 @@ Already staged in Fly during setup:
 - `SUPABASE_URL`
 - `SUPABASE_KEY`
 - `CORS_ORIGINS`
+- `STORAGE_R2_ACCOUNT_ID`
+- `STORAGE_R2_API_TOKEN`
+- `STORAGE_R2_BUCKET`
 
 Still needed before production payment flow is ready:
 

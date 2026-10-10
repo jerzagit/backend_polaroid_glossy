@@ -60,6 +60,9 @@ public class FileController {
     @DeleteMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING', 'PACKER')")
     public ResponseEntity<Void> deleteFile(@RequestParam String key) throws IOException {
+        if (key == null || key.isBlank() || key.contains("://") || key.startsWith("http")) {
+            return ResponseEntity.badRequest().build();
+        }
         fileService.deleteFile(key);
         return ResponseEntity.noContent().build();
     }

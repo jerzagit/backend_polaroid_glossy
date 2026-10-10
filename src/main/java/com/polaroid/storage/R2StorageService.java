@@ -58,6 +58,12 @@ public class R2StorageService implements StorageService {
 
     @PostConstruct
     public void init() {
+        if (accountId == null || accountId.isBlank()) {
+            throw new IllegalStateException("app.storage.r2.account-id is required but not configured");
+        }
+        if (apiToken == null || apiToken.isBlank()) {
+            throw new IllegalStateException("app.storage.r2.api-token is required but not configured");
+        }
         apiBase = "https://api.cloudflare.com/client/v4/accounts/" + accountId + "/r2/buckets/" + bucketName;
         initPresigner();
         log.info("R2StorageService initialized for account: {}", accountId);
