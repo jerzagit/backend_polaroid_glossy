@@ -20,6 +20,10 @@ import java.util.UUID;
 @Repository
 public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecificationExecutor<Order> {
     Optional<Order> findByOrderNumber(String orderNumber);
+    Optional<Order> findByUserIdAndCheckoutKey(UUID userId, String checkoutKey);
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("select o from Order o where o.id = :id")
+    Optional<Order> lockById(@Param("id") UUID id);
     Optional<Order> findByToyyibpayRef(String toyyibpayRef);
     
     Page<Order> findByUserId(UUID userId, Pageable pageable);

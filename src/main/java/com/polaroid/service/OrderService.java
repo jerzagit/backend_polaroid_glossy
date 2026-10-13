@@ -67,6 +67,14 @@ public class OrderService {
             user = userRepository.findByEmail(userEmail).orElse(null);
         }
         
+        if ("later".equals(request.getUploadMode()) && user == null) {
+            throw new ForbiddenException("Sign in to upload photos later");
+        }
+        if (user != null && request.getCheckoutKey() != null) {
+            userRepository.lockById(user.getId()).orElseThrow();
+            var existing = orderRepository.findByUserIdAndCheckoutKey(user.getId(), request.getCheckoutKey());
+            if (existing.isPresent()) return orderMapper.toDto(existing.get());
+        }
         User affiliate = null;
         if (request.getAffiliateCode() != null && !request.getAffiliateCode().isEmpty()) {
             affiliate = userRepository.findByAffiliateCode(request.getAffiliateCode()).orElse(null);
@@ -122,6 +130,9 @@ public class OrderService {
                 .notes(request.getNotes())
                 .status(initialStatus)
                 .paymentStatus(PaymentStatus.PENDING)
+                .paymentMethod(request.getPaymentMethod() == null ? "toyyibpay" : request.getPaymentMethod())
+                .uploadMode(request.getUploadMode() == null ? "now" : request.getUploadMode())
+                .checkoutKey(user != null ? request.getCheckoutKey() : null)
                 .subtotal(subtotal)
                 .shipping(shipping)
                 .total(subtotal.add(shipping))
@@ -198,6 +209,7 @@ public class OrderService {
         List<Order> expiredDrafts = orderRepository.findByStatusAndExpiresAtBefore(
                 OrderStatus.DRAFT, LocalDateTime.now());
         for (Order order : expiredDrafts) {
+            if (!PaymentCleanupService.awaitingPayment(order)) continue;
             order.setStatus(OrderStatus.EXPIRED);
             order.setDraftExpiredAt(LocalDateTime.now());
             orderRepository.save(order);
@@ -243,6 +255,11 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         
+        orderRepository.lockById(order.getId()).orElseThrow();
+        if (java.util.Set.of(OrderStatus.PROCESSING, OrderStatus.POSTED, OrderStatus.ON_DELIVERY, OrderStatus.DELIVERED).contains(newStatus)
+                && !Fulfillment.ready(order, objectMapper)) {
+            throw new BadRequestException("Payment and all required photos must be complete before processing");
+        }
         OrderStatus oldStatus = order.getStatus();
         order.setStatus(newStatus);
         
@@ -296,7 +313,12 @@ public class OrderService {
         Order order = orderRepository.findByOrderNumber(orderNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         
+        orderRepository.lockById(order.getId()).orElseThrow();
+        if (order.getPaymentStatus() == PaymentStatus.PAID && status != PaymentStatus.REFUNDED) {
+            status = PaymentStatus.PAID;
+        }
         order.setPaymentStatus(status);
+        Fulfillment.reconcile(order, objectMapper);
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
             if (order.getStatus() == OrderStatus.DRAFT) {
@@ -315,7 +337,12 @@ public class OrderService {
         Order order = orderRepository.findById(orderId)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
+        orderRepository.lockById(order.getId()).orElseThrow();
+        if (order.getPaymentStatus() == PaymentStatus.PAID && status != PaymentStatus.REFUNDED) {
+            status = PaymentStatus.PAID;
+        }
         order.setPaymentStatus(status);
+        Fulfillment.reconcile(order, objectMapper);
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
             addStatusHistory(order, order.getStatus(), "Payment confirmed by admin");
@@ -331,7 +358,12 @@ public class OrderService {
     public OrderResponse updatePaymentStatusForUser(String orderNumber, PaymentStatus status, String requesterEmail, String message) {
         Order order = getAuthorizedOrder(orderNumber, requesterEmail);
 
+        orderRepository.lockById(order.getId()).orElseThrow();
+        if (order.getPaymentStatus() == PaymentStatus.PAID && status != PaymentStatus.REFUNDED) {
+            status = PaymentStatus.PAID;
+        }
         order.setPaymentStatus(status);
+        Fulfillment.reconcile(order, objectMapper);
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
         }
@@ -345,14 +377,15 @@ public class OrderService {
         Order order = orderRepository.findByOrderNumber(orderNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderNumber));
 
+        orderRepository.lockById(order.getId()).orElseThrow();
         String action = request.getAction().toUpperCase();
 
         switch (action) {
             case "APPROVE" -> {
                 order.setPaymentStatus(PaymentStatus.PAID);
-                order.setStatus(OrderStatus.PROCESSING);
+                Fulfillment.reconcile(order, objectMapper);
                 order.setPaidAt(LocalDateTime.now());
-                addStatusHistory(order, OrderStatus.PROCESSING, "Payment verified and approved by " + adminEmail);
+                addStatusHistory(order, order.getStatus(), "Payment verified and approved by " + adminEmail);
                 emailService.sendPaymentConfirmation(order);
             }
             case "REJECT" -> {

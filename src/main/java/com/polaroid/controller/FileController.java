@@ -30,11 +30,14 @@ public class FileController {
             @RequestParam(value = "customerEmail", required = false) String customerEmail,
             @RequestParam(value = "uploadToken", required = false) String uploadToken,
             @RequestParam(value = "orderItemId", required = false) String orderItemId,
+            @RequestParam(value = "photoId", required = false) String photoId,
             Authentication authentication,
             HttpServletRequest request) throws IOException {
 
         Map<String, Object> result;
-        if (authentication != null) {
+        if (authentication != null && photoId != null) {
+            result = fileService.uploadWithId(file, orderId, orderItemId, customerEmail, authentication.getName(), photoId);
+        } else if (authentication != null) {
             result = fileService.uploadFile(file, orderId, orderItemId, customerEmail, authentication.getName());
         } else {
             result = fileService.uploadFileForOrder(file, orderId, orderItemId, customerEmail, uploadToken, clientIp(request));
@@ -43,6 +46,16 @@ public class FileController {
         Map<String, Object> response = new HashMap<>(result);
         response.put("success", true);
         return ResponseEntity.ok(response);
+    }
+
+    @PostMapping("/payment-proof")
+    @PreAuthorize("isAuthenticated()")
+    public ResponseEntity<Map<String, Object>> uploadPaymentProof(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam("orderId") String orderId,
+            @RequestParam(value = "reference", required = false) String reference,
+            Authentication authentication) throws IOException {
+        return ResponseEntity.ok(fileService.uploadPaymentProof(file, orderId, reference, authentication.getName()));
     }
 
     private String clientIp(HttpServletRequest request) {

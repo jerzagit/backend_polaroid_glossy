@@ -59,7 +59,8 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .status(entity.getStatus())
                 .paymentStatus(entity.getPaymentStatus())
                 .paymentMethod(entity.getPaymentMethod())
-                .paymentProofUrl(entity.getPaymentProofUrl())
+                .uploadMode(entity.getUploadMode())
+                .paymentProofUrl(entity.getPaymentProofUrl() == null ? null : renderableImageUrl(entity.getPaymentProofUrl()))
                 .paymentReference(entity.getPaymentReference())
                 .toyyibpayRef(entity.getToyyibpayRef())
                 .subtotal(entity.getSubtotal())
@@ -115,6 +116,10 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .unitPrice(item.getUnitPrice())
                 .totalPrice(item.getTotalPrice())
                 .images(freshImageUrls(item))
+                .uploadedPhotoIds(readJsonStringList(item.getS3Keys()).stream()
+                    .map(key -> key.substring(key.lastIndexOf('/') + 1))
+                    .filter(name -> name.startsWith("upload-"))
+                    .map(name -> name.substring(7, name.lastIndexOf('.'))).toList())
                 .customTexts(readJsonStringList(item.getCustomTexts()))
                 .build();
     }

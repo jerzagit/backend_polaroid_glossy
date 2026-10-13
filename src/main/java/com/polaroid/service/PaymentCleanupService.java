@@ -44,6 +44,7 @@ public class PaymentCleanupService {
                 PaymentStatus.PENDING, expirationThreshold);
 
         for (Order order : expiredOrders) {
+            if (!awaitingPayment(order)) continue;
             try {
                 deleteOrderFiles(order);
                 order.setStatus(OrderStatus.CANCELLED);
@@ -60,12 +61,36 @@ public class PaymentCleanupService {
                 PaymentStatus.PENDING, reminderThreshold);
 
         for (Order order : reminderOrders) {
-            if (order.getCreatedAt().isAfter(expirationThreshold)) {
+            if (awaitingPayment(order) && order.getPaymentReminderSentAt() == null && order.getCreatedAt().isAfter(expirationThreshold)) {
                 log.info("Payment reminder needed for order {} (created {}, customer {})",
                         order.getOrderNumber(), order.getCreatedAt(), order.getCustomerEmail());
-                sendPaymentReminder(order);
+                if (emailService.sendPaymentReminder(order)) {
+                    order.setPaymentReminderSentAt(now);
+                    orderRepository.save(order);
+                }
             }
         }
+    }
+
+    @Scheduled(fixedRate = 3600000)
+    @Transactional
+    public void remindMissingPhotos() {
+        LocalDateTime now = LocalDateTime.now();
+        for (Order order : orderRepository.findByPaymentStatusAndCreatedAtBefore(PaymentStatus.PAID, now.minusHours(24))) {
+            if (order.getStatus() != OrderStatus.PENDING || order.getUploadReminderSentAt() != null
+                    || order.getPaidAt() == null || order.getPaidAt().isAfter(now.minusHours(24))
+                    || Fulfillment.photosComplete(order, new com.fasterxml.jackson.databind.ObjectMapper())) continue;
+            if (emailService.sendUploadReminder(order)) {
+                order.setUploadReminderSentAt(now);
+                orderRepository.save(order);
+            }
+        }
+    }
+
+    static boolean awaitingPayment(Order order) {
+        return order.getPaymentStatus() == PaymentStatus.PENDING
+                && (order.getStatus() == OrderStatus.PENDING || order.getStatus() == OrderStatus.DRAFT)
+                && (order.getPaymentProofUrl() == null || order.getPaymentProofUrl().isBlank());
     }
 
     private void deleteOrderFiles(Order order) {

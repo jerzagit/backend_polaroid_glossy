@@ -78,6 +78,22 @@ public class Order extends Auditable {
     @Column(name = "payment_method")
     private String paymentMethod;
 
+    @Column(name = "upload_mode")
+    private String uploadMode;
+
+    @Version
+    @Column(name = "version", nullable = false)
+    private Long version;
+
+    @Column(name = "checkout_key")
+    private String checkoutKey;
+
+    @Column(name = "payment_reminder_sent_at")
+    private LocalDateTime paymentReminderSentAt;
+
+    @Column(name = "upload_reminder_sent_at")
+    private LocalDateTime uploadReminderSentAt;
+
     @Column(name = "payment_proof_url")
     private String paymentProofUrl;
 

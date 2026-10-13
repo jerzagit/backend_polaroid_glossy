@@ -43,6 +43,15 @@ public class OrderRequest {
 
     private String affiliateCode;
 
+    @Pattern(regexp = "now|later")
+    private String uploadMode = "now";
+
+    @Pattern(regexp = "toyyibpay|bank_transfer")
+    private String paymentMethod = "toyyibpay";
+
+    @Pattern(regexp = "[a-zA-Z0-9-]{1,64}")
+    private String checkoutKey;
+
     private String notes;
     
     @Valid
