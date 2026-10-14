@@ -2,6 +2,7 @@ package com.polaroid.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import java.math.BigDecimal;
 
 @Entity
 @Table(name = "product_meta")
@@ -34,7 +35,8 @@ public class ProductMeta {
     @Column(name = "full_description", columnDefinition = "TEXT")
     private String fullDescription;
 
-    private Double rating;
+    @Column(precision = 3, scale = 2)
+    private BigDecimal rating;
 
     @Column(name = "review_count")
     private Integer reviewCount;

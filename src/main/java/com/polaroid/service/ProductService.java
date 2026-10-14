@@ -78,7 +78,7 @@ public class ProductService {
                 .features(features)
                 .accentColor(meta != null ? meta.getAccentColor() : null)
                 .specs(specs)
-                .rating(meta != null ? meta.getRating() : null)
+                .rating(meta != null && meta.getRating() != null ? meta.getRating().doubleValue() : null)
                 .reviewCount(meta != null ? meta.getReviewCount() : 0)
                 .pricingTiers(pricingTiers)
                 .tiktokVideos(tiktokVideos)
