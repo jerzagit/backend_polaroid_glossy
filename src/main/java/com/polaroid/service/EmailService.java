@@ -112,10 +112,10 @@ public class EmailService {
         }
     }
 
-    public void sendPaymentReminder(Order order) {
+    public boolean sendPaymentReminder(Order order) {
         if (fromEmail == null || fromEmail.isBlank()) {
             log.warn("Mail not configured - skipping reminder for order {} to {}", order.getOrderNumber(), order.getCustomerEmail());
-            return;
+            return false;
         }
 
         try {
@@ -133,7 +133,7 @@ public class EmailService {
             ctx.setVariables(Map.of(
                 "order", order,
                 "deadline", deadline,
-                "trackingUrl", frontendUrl + "?order=" + order.getOrderNumber(),
+                "trackingUrl", frontendUrl + "/profile/orders/" + order.getOrderNumber(),
                 "supportWhatsApp", supportWhatsApp,
                 "supportEmail", supportEmail
             ));
@@ -143,8 +143,27 @@ public class EmailService {
 
             mailSender.send(message);
             log.info("Payment reminder sent for order {} to {}", order.getOrderNumber(), order.getCustomerEmail());
-        } catch (MessagingException e) {
+            return true;
+        } catch (Exception e) {
             log.error("Failed to send payment reminder for order {}: {}", order.getOrderNumber(), e.getMessage());
+            return false;
+        }
+    }
+
+    public boolean sendUploadReminder(Order order) {
+        if (fromEmail == null || fromEmail.isBlank()) return false;
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, false, "UTF-8");
+            helper.setFrom(appFromEmail);
+            helper.setTo(order.getCustomerEmail());
+            helper.setSubject("Photos needed / Foto diperlukan - " + order.getOrderNumber());
+            helper.setText("Your payment is received. Please upload the remaining photos before we can print your order. / Bayaran diterima. Sila muat naik baki foto sebelum pesanan dicetak.\n\n" + frontendUrl + "/profile/orders/" + order.getOrderNumber());
+            mailSender.send(message);
+            return true;
+        } catch (Exception e) {
+            log.error("Upload reminder failed for {}", order.getOrderNumber(), e);
+            return false;
         }
     }
 

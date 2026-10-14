@@ -79,8 +79,46 @@ public class FileService {
         return storeFile(file, order, orderItemId);
     }
 
+    @Transactional
+    public Map<String, Object> uploadWithId(MultipartFile file, String orderId, String orderItemId, String customerEmail, String userEmail, String photoId) throws IOException {
+        if (photoId == null || !photoId.matches("[a-zA-Z0-9-]{1,64}")) throw new BadRequestException("Invalid photo ID");
+        if (orderItemId == null || orderItemId.isBlank()) throw new BadRequestException("Order item is required");
+        Order order = findAuthorizedOrder(orderId, userEmail);
+        orderRepository.lockById(order.getId()).orElseThrow();
+        validateCustomerEmailMatches(order, customerEmail);
+        validateOrderAcceptsUpload(order);
+        return storeFile(file, order, orderItemId, photoId);
+    }
+
+    @Transactional
+    public Map<String, Object> uploadPaymentProof(MultipartFile file, String orderId, String reference, String userEmail) throws IOException {
+        Order order = findAuthorizedOrder(orderId, userEmail);
+        orderRepository.lockById(order.getId()).orElseThrow();
+        if (!"bank_transfer".equals(order.getPaymentMethod()) || order.getPaymentStatus() == PaymentStatus.PAID
+                || (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.DRAFT)) {
+            throw new BadRequestException("Order is not awaiting bank transfer proof");
+        }
+        byte[] bytes = validateAndProcessImage(file);
+        boolean jpeg = "jpeg".equals(detectImageFormat(bytes));
+        String key = "payment-proofs/" + order.getOrderNumber() + "/" + UUID.randomUUID() + (jpeg ? ".jpg" : ".png");
+        storageService.upload(key, bytes, jpeg ? "image/jpeg" : "image/png");
+        order.setPaymentProofUrl(key);
+        order.setPaymentReference(reference == null ? null : reference.substring(0, Math.min(reference.length(), 200)));
+        orderRepository.save(order);
+        return Map.of("success", true, "url", storageService.getSignedUrl(key, IMAGE_URL_EXPIRATION_SECONDS));
+    }
+
     private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId) throws IOException {
+        return storeFile(file, order, orderItemId, null);
+    }
+
+    private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId, String photoId) throws IOException {
         OrderItem item = resolveOrderItemForUpdate(order, orderItemId);
+        if (photoId != null) {
+            String prefix = "orders/" + order.getOrderNumber() + "/" + item.getId() + "/upload-" + photoId + ".";
+            var existing = readJsonStringList(item.getS3Keys()).stream().filter(key -> key.startsWith(prefix)).findFirst();
+            if (existing.isPresent()) return Map.of("url", storageService.getSignedUrl(existing.get(), IMAGE_URL_EXPIRATION_SECONDS), "photoId", photoId);
+        }
         enforceUploadCapacity(item);
 
         byte[] processedImage = validateAndProcessImage(file);
@@ -88,7 +126,7 @@ public class FileService {
         String format = detectImageFormat(processedImage);
         boolean isJpeg = "jpeg".equals(format);
         String extension = isJpeg ? "jpg" : "png";
-        String fileName = UUID.randomUUID().toString() + "." + extension;
+        String fileName = (photoId == null ? UUID.randomUUID().toString() : "upload-" + photoId) + "." + extension;
         String folder = "orders/" + order.getOrderNumber() + "/" + item.getId();
         String key = folder + "/" + fileName;
 
@@ -233,7 +271,8 @@ public class FileService {
             return expectedImageCount > 0 && readJsonStringList(item.getS3Keys()).size() >= expectedImageCount;
         });
 
-        if (complete && order.getUploadTokenHash() != null) {
+        if (complete) {
+            Fulfillment.reconcile(order, objectMapper);
             order.setUploadTokenHash(null);
             order.setUploadTokenExpiresAt(null);
             orderRepository.save(order);

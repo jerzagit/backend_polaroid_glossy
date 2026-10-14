@@ -21,5 +21,6 @@ public class OrderItemResponse {
     private BigDecimal unitPrice;
     private BigDecimal totalPrice;
     private List<String> images;
+    private List<String> uploadedPhotoIds;
     private List<String> customTexts;
 }
