@@ -8,6 +8,7 @@ import com.polaroid.dto.request.VerifyPaymentRequest;
 import com.polaroid.dto.response.OrderResponse;
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
+import com.polaroid.exception.PriceConflictException;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.*;
 import com.polaroid.model.enums.OrderStatus;
@@ -51,6 +52,7 @@ public class OrderService {
     private final OrderMapper orderMapper;
     private final EmailService emailService;
     private final ObjectMapper objectMapper;
+    private final CatalogPricingService catalogPricingService;
 
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -84,29 +86,20 @@ public class OrderService {
         List<OrderItem> orderItems = new ArrayList<>();
         
         for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
-            String sizeId = normalizeSizeId(itemReq.getSizeId());
-            PrintSize printSize = printSizeRepository.findById(sizeId)
-                    .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + sizeId));
-            
-            BigDecimal itemTotal = printSize.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
-            subtotal = subtotal.add(itemTotal);
-            
-            OrderItem item = OrderItem.builder()
-                    .sizeId(printSize.getId())
-                    .sizeName(printSize.getDisplayName())
-                    .quantity(itemReq.getQuantity())
-                    .expectedImageCount(expectedImageCount(itemReq))
-                    .unitPrice(printSize.getPrice())
-                    .totalPrice(itemTotal)
-                    .images(formatJsonArray(itemReq.getImageUrls()))
-                    .s3Keys(formatJsonArray(itemReq.getImageUrls()))
-                    .customTexts(formatJsonArray(itemReq.getCustomTexts()))
-                    .build();
-            
+            OrderItem item = buildOrderItem(itemReq);
+            subtotal = subtotal.add(item.getTotalPrice());
             orderItems.add(item);
         }
         
         BigDecimal shipping = shippingCost(request.getCustomerState());
+        BigDecimal total = subtotal.add(shipping);
+
+        if (request.getExpectedTotal() != null && request.getExpectedTotal().compareTo(total) != 0) {
+            throw new PriceConflictException(
+                    PriceConflictException.CODE_PRICE_CHANGED,
+                    "Pricing has changed since you reviewed your order. Please confirm the updated total.",
+                    total);
+        }
 
         String uploadToken = user == null ? generateUploadToken() : null;
 
@@ -135,7 +128,7 @@ public class OrderService {
                 .checkoutKey(user != null ? request.getCheckoutKey() : null)
                 .subtotal(subtotal)
                 .shipping(shipping)
-                .total(subtotal.add(shipping))
+                .total(total)
                 .expiresAt(isGuest ? LocalDateTime.now().plusHours(draftExpirationHours) : null)
                 .uploadTokenHash(uploadToken != null ? hashUploadToken(uploadToken) : null)
                 .uploadTokenExpiresAt(uploadToken != null ? LocalDateTime.now().plusHours(uploadTokenExpirationHours) : null)
@@ -446,7 +439,11 @@ public class OrderService {
     }
 
     private int expectedImageCount(OrderRequest.OrderItemRequest itemReq) {
-        int quantity = itemReq.getQuantity() != null ? itemReq.getQuantity() : 0;
+        return expectedImageCount(itemReq, itemReq.getQuantity());
+    }
+
+    private int expectedImageCount(OrderRequest.OrderItemRequest itemReq, Integer effectiveQuantity) {
+        int quantity = effectiveQuantity != null ? effectiveQuantity : 0;
         int expected;
         if (itemReq.getExpectedImageCount() != null) {
             if (itemReq.getExpectedImageCount() < 0) {
@@ -473,6 +470,90 @@ public class OrderService {
         }
 
         return expected;
+    }
+
+    /**
+     * Builds an order item from the customer's selection. Package selections
+     * (productId + variantId + packageId) are validated against the database
+     * and priced with whole-package totals; legacy sizeId selections keep the
+     * existing per-print pricing until the frontend is fully migrated.
+     */
+    private OrderItem buildOrderItem(OrderRequest.OrderItemRequest itemReq) {
+        if (itemReq.getPackageId() != null || itemReq.getVariantId() != null) {
+            return buildPackageOrderItem(itemReq);
+        }
+        if (itemReq.getSizeId() == null || itemReq.getSizeId().isBlank()) {
+            throw new BadRequestException("Each item requires either a package selection (packageId) or a sizeId");
+        }
+        if (itemReq.getQuantity() == null || itemReq.getQuantity() <= 0) {
+            throw new BadRequestException("Quantity must be a positive number of prints");
+        }
+
+        String sizeId = normalizeSizeId(itemReq.getSizeId());
+        PrintSize printSize = printSizeRepository.findById(sizeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + sizeId));
+
+        BigDecimal itemTotal = printSize.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
+        return OrderItem.builder()
+                .sizeId(printSize.getId())
+                .sizeName(printSize.getDisplayName())
+                .quantity(itemReq.getQuantity())
+                .expectedImageCount(expectedImageCount(itemReq))
+                .unitPrice(printSize.getPrice())
+                .totalPrice(itemTotal)
+                .images(formatJsonArray(itemReq.getImageUrls()))
+                .s3Keys(formatJsonArray(itemReq.getImageUrls()))
+                .customTexts(formatJsonArray(itemReq.getCustomTexts()))
+                .build();
+    }
+
+    private OrderItem buildPackageOrderItem(OrderRequest.OrderItemRequest itemReq) {
+        CatalogPricingService.ResolvedPackage resolved = catalogPricingService.resolveActivePackage(
+                itemReq.getProductId(), itemReq.getVariantId(), itemReq.getPackageId());
+
+        int packageCount = itemReq.getPackages() != null ? itemReq.getPackages() : 1;
+        if (packageCount < 1) {
+            throw new BadRequestException("packages must be at least 1");
+        }
+        int totalPrints = resolved.pkg().getQuantity() * packageCount;
+
+        return OrderItem.builder()
+                .sizeId(resolved.product().getId())
+                .sizeName(resolved.product().getDisplayName())
+                .variantId(resolved.variant().getId())
+                .variantLabel(resolved.variant().getLabel())
+                .style(resolved.variant().getStyle().name())
+                .packageId(resolved.pkg().getId())
+                .packageQuantity(resolved.pkg().getQuantity())
+                .packagePrice(resolved.pkg().getPrice())
+                .packageCount(packageCount)
+                .quantity(totalPrints)
+                .expectedImageCount(expectedImageCount(itemReq, totalPrints))
+                .unitPrice(resolved.pkg().getPrice())
+                .totalPrice(resolved.totalPrice(packageCount))
+                .images(formatJsonArray(itemReq.getImageUrls()))
+                .s3Keys(formatJsonArray(itemReq.getImageUrls()))
+                .customTexts(formatJsonArray(itemReq.getCustomTexts()))
+                .build();
+    }
+
+    /**
+     * Re-reads current catalog prices into the order snapshot after the
+     * customer has been shown a PRICE_CHANGED conflict. Returns the updated
+     * order so the frontend can display the new total for confirmation.
+     */
+    @Transactional
+    public OrderResponse confirmPricing(String orderNumber, String requesterEmail) {
+        Order order = getAuthorizedOrder(orderNumber, requesterEmail);
+        orderRepository.lockById(order.getId()).orElseThrow();
+
+        BigDecimal subtotal = catalogPricingService.resyncOrderItemPrices(order);
+        order.setSubtotal(subtotal);
+        order.setShipping(shippingCost(order.getCustomerState()));
+        order.setTotal(subtotal.add(order.getShipping()));
+
+        addStatusHistory(order, order.getStatus(), "Customer reconfirmed catalog pricing before payment");
+        return orderMapper.toDto(orderRepository.save(order));
     }
 
     private BigDecimal shippingCost(String state) {
@@ -533,22 +614,7 @@ public class OrderService {
             order.getItems().clear();
             List<OrderItem> newItems = new ArrayList<>();
             for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
-                String sizeId = normalizeSizeId(itemReq.getSizeId());
-                PrintSize printSize = printSizeRepository.findById(sizeId)
-                        .orElseThrow(() -> new ResourceNotFoundException("Print size not found: " + sizeId));
-                BigDecimal itemTotal = printSize.getPrice().multiply(BigDecimal.valueOf(itemReq.getQuantity()));
-                OrderItem item = OrderItem.builder()
-                        .sizeId(printSize.getId())
-                        .sizeName(printSize.getDisplayName())
-                        .quantity(itemReq.getQuantity())
-                        .expectedImageCount(expectedImageCount(itemReq))
-                        .unitPrice(printSize.getPrice())
-                        .totalPrice(itemTotal)
-                        .images(formatJsonArray(itemReq.getImageUrls()))
-                        .s3Keys(formatJsonArray(itemReq.getImageUrls()))
-                        .customTexts(formatJsonArray(itemReq.getCustomTexts()))
-                        .build();
-                newItems.add(item);
+                newItems.add(buildOrderItem(itemReq));
             }
             newItems.forEach(item -> item.setOrder(order));
             order.setItems(newItems);

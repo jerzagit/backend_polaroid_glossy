@@ -16,6 +16,13 @@ public class OrderItemResponse {
     private String id;
     private String sizeId;
     private String sizeName;
+    private String variantId;
+    private String variantLabel;
+    private String style;
+    private String packageId;
+    private Integer packageQuantity;
+    private BigDecimal packagePrice;
+    private Integer packageCount;
     private Integer quantity;
     private Integer expectedImageCount;
     private BigDecimal unitPrice;

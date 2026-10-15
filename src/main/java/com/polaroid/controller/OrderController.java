@@ -144,6 +144,16 @@ public class OrderController {
         return ResponseEntity.ok(paymentService.createPayment(orderNumber, authentication.getName()));
     }
 
+    /** After a PRICE_CHANGED conflict, re-reads catalog prices into the order
+     *  and returns the updated total for the customer to reconfirm. */
+    @PostMapping("/{orderNumber}/confirm-price")
+    public ResponseEntity<Map<String, Object>> confirmPricing(
+            @PathVariable String orderNumber,
+            Authentication authentication) {
+        OrderResponse order = orderService.confirmPricing(orderNumber, authentication.getName());
+        return ResponseEntity.ok(Map.of("success", true, "order", order));
+    }
+
     @PostMapping("/{orderNumber}/mock-pay")
     public ResponseEntity<OrderResponse> mockPayment(
             @PathVariable String orderNumber,

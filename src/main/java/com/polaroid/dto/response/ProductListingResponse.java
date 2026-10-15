@@ -19,6 +19,7 @@ public class ProductListingResponse {
     private String displayName;
     private BigDecimal width;
     private BigDecimal height;
+    private ProductDimensionsResponse dimensions;
     private BigDecimal price;
     private String description;
     private String shortDescription;
@@ -33,6 +34,8 @@ public class ProductListingResponse {
     private Double rating;
     private Integer reviewCount;
     private List<PricingTierResponse> pricingTiers;
+    private List<ProductVariantResponse> variants;
     private List<TikTokVideoResponse> tiktokVideos;
+    private Boolean active;
     private Boolean available;
 }

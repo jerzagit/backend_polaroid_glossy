@@ -2,6 +2,7 @@ package com.polaroid.config;
 
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ForbiddenException;
+import com.polaroid.exception.PriceConflictException;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.exception.UploadConflictException;
 import lombok.extern.slf4j.Slf4j;
@@ -62,6 +63,19 @@ public class GlobalExceptionHandler {
             body.put("uploadedImageCount", ex.getUploadedImageCount());
             body.put("expectedImageCount", ex.getExpectedImageCount());
             body.put("remainingImageCount", ex.getRemainingImageCount());
+        }
+        return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    @ExceptionHandler(PriceConflictException.class)
+    public ResponseEntity<Map<String, Object>> handlePriceConflict(PriceConflictException ex) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("success", false);
+        body.put("code", ex.getCode());
+        body.put("message", ex.getMessage());
+        body.put("error", ex.getMessage());
+        if (ex.getCurrentTotal() != null) {
+            body.put("currentTotal", ex.getCurrentTotal().toPlainString());
         }
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
     }
