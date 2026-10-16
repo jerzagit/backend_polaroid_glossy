@@ -3,17 +3,28 @@ package com.polaroid.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.polaroid.dto.response.PricingTierResponse;
+import com.polaroid.dto.response.ProductDimensionsResponse;
 import com.polaroid.dto.response.ProductListingResponse;
+import com.polaroid.dto.response.ProductPackageResponse;
+import com.polaroid.dto.response.ProductVariantResponse;
 import com.polaroid.dto.response.TikTokVideoResponse;
 import com.polaroid.exception.ResourceNotFoundException;
-import com.polaroid.model.PrintSize;
 import com.polaroid.model.PrintSizePricingTier;
+import com.polaroid.model.Product;
+import com.polaroid.model.ProductAlias;
 import com.polaroid.model.ProductMeta;
+import com.polaroid.model.ProductPackage;
+import com.polaroid.model.ProductVariant;
+import com.polaroid.model.enums.ProductStyle;
 import com.polaroid.repository.PrintSizePricingTierRepository;
-import com.polaroid.repository.PrintSizeRepository;
+import com.polaroid.repository.ProductAliasRepository;
 import com.polaroid.repository.ProductMetaRepository;
+import com.polaroid.repository.ProductPackageRepository;
+import com.polaroid.repository.ProductRepository;
+import com.polaroid.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -22,32 +33,112 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductService {
 
-    private final PrintSizeRepository printSizeRepository;
+    private final ProductRepository productRepository;
+    private final ProductAliasRepository productAliasRepository;
     private final ProductMetaRepository productMetaRepository;
     private final PrintSizePricingTierRepository pricingTierRepository;
+    private final ProductVariantRepository variantRepository;
+    private final ProductPackageRepository packageRepository;
     private final ObjectMapper objectMapper;
 
+    @Transactional(readOnly = true)
     public List<ProductListingResponse> getAllProducts() {
-        List<PrintSize> activeSizes = printSizeRepository.findByIsActiveTrue();
-        Map<String, ProductMeta> metaMap = productMetaRepository.findAll().stream()
-                .collect(Collectors.toMap(ProductMeta::getId, m -> m));
-        Map<String, List<PrintSizePricingTier>> tiersMap = pricingTierRepository.findAll().stream()
-                .collect(Collectors.groupingBy(PrintSizePricingTier::getSizeId));
+        return buildAllProducts(false);
+    }
 
-        return activeSizes.stream()
-                .map(size -> buildProductListing(size, metaMap.get(size.getId()), tiersMap.getOrDefault(size.getId(), List.of())))
+    /** Includes inactive products, variants, and packages for the seller dashboard. */
+    @Transactional(readOnly = true)
+    public List<ProductListingResponse> getAllProductsForAdmin() {
+        return buildAllProducts(true);
+    }
+
+    /**
+     * Storefront lookup by numeric id, by product code (ic, 2r, ...), or by a
+     * legacy alias (ic-border, 2r-no-border, ...). Alias links resolve to the
+     * canonical product filtered to the aliased style.
+     */
+    @Transactional(readOnly = true)
+    public ProductListingResponse getProductById(String idOrCode) {
+        String key = idOrCode == null ? "" : idOrCode.trim().toLowerCase();
+        if (key.isEmpty()) {
+            throw new ResourceNotFoundException("Product not found: " + idOrCode);
+        }
+
+        Product product;
+        ProductStyle styleFilter = null;
+        if (key.matches("\\d+")) {
+            product = productRepository.findById(Long.valueOf(key))
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + idOrCode));
+        } else {
+            Optional<Product> byCode = productRepository.findByCode(key);
+            if (byCode.isPresent()) {
+                product = byCode.get();
+            } else {
+                ProductAlias alias = productAliasRepository.findById(key)
+                        .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + idOrCode));
+                styleFilter = alias.getStyle();
+                product = productRepository.findById(alias.getProductId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + idOrCode));
+            }
+        }
+        return buildListing(product, styleFilter, false);
+    }
+
+    @Transactional(readOnly = true)
+    public ProductListingResponse getProductForAdmin(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
+        return buildListing(product, null, true);
+    }
+
+    private List<ProductListingResponse> buildAllProducts(boolean includeInactive) {
+        List<Product> products = includeInactive
+                ? productRepository.findAllByOrderBySortOrderAscIdAsc()
+                : productRepository.findByIsActiveTrueOrderBySortOrderAscIdAsc();
+        return products.stream()
+                .map(product -> buildListing(product, null, includeInactive))
                 .collect(Collectors.toList());
     }
 
-    public ProductListingResponse getProductById(String id) {
-        PrintSize printSize = printSizeRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
-        ProductMeta meta = productMetaRepository.findById(id).orElse(null);
-        List<PrintSizePricingTier> tiers = pricingTierRepository.findBySizeIdOrderByQuantityAsc(id);
-        return buildProductListing(printSize, meta, tiers);
+    private ProductListingResponse buildListing(Product product, ProductStyle styleFilter, boolean includeInactive) {
+        ProductMeta meta = productMetaRepository.findById(product.getCode()).orElse(null);
+        List<PrintSizePricingTier> tiers = pricingTierRepository
+                .findBySizeIdOrderByQuantityAsc(product.getCode());
+        List<ProductVariantResponse> variants = variantsFor(product.getId(), styleFilter, includeInactive);
+        return buildProductListing(product, meta, tiers, variants);
     }
 
-    private ProductListingResponse buildProductListing(PrintSize size, ProductMeta meta, List<PrintSizePricingTier> tiers) {
+    /** Variants of a product; when {@code styleFilter} is set only that style is
+     *  returned (used by legacy aliases such as ic-border -> IC BORDER). */
+    private List<ProductVariantResponse> variantsFor(Long productId, ProductStyle styleFilter, boolean includeInactive) {
+        return variantRepository.findByProductIdOrderBySortOrderAscIdAsc(productId).stream()
+                .filter(v -> styleFilter == null || v.getStyle() == styleFilter)
+                .filter(v -> includeInactive || Boolean.TRUE.equals(v.getIsActive()))
+                .map(v -> ProductVariantResponse.builder()
+                        .id(v.getId())
+                        .style(v.getStyle())
+                        .label(v.getLabel())
+                        .active(Boolean.TRUE.equals(v.getIsActive()))
+                        .packages(packagesFor(v.getId(), includeInactive))
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    private List<ProductPackageResponse> packagesFor(Long variantId, boolean includeInactive) {
+        return packageRepository.findByVariantIdOrderBySortOrderAscQuantityAsc(variantId).stream()
+                .filter(p -> includeInactive || Boolean.TRUE.equals(p.getIsActive()))
+                .map(p -> ProductPackageResponse.builder()
+                        .id(p.getId())
+                        .quantity(p.getQuantity())
+                        .price(p.getPrice().toPlainString())
+                        .currency(p.getCurrency())
+                        .active(Boolean.TRUE.equals(p.getIsActive()))
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    private ProductListingResponse buildProductListing(Product product, ProductMeta meta, List<PrintSizePricingTier> tiers,
+                                                       List<ProductVariantResponse> variants) {
         List<String> images = parseJsonArray(meta != null ? meta.getImages() : null);
         List<String> features = parseJsonArray(meta != null ? meta.getFeatures() : null);
         List<TikTokVideoResponse> tiktokVideos = parseTikTokVideos(meta != null ? meta.getTiktokVideos() : null);
@@ -59,37 +150,45 @@ public class ProductService {
                         .build())
                 .collect(Collectors.toList());
 
-        Map<String, String> specs = buildSpecs(size);
+        boolean active = Boolean.TRUE.equals(product.getIsActive());
 
         return ProductListingResponse.builder()
-                .id(size.getId())
-                .name(size.getName())
-                .displayName(size.getDisplayName())
-                .width(size.getWidth())
-                .height(size.getHeight())
-                .price(size.getPrice())
-                .description(size.getDescription())
+                .id(product.getId())
+                .code(product.getCode())
+                .name(product.getName())
+                .displayName(product.getDisplayName())
+                .width(product.getWidth())
+                .height(product.getHeight())
+                .dimensions(ProductDimensionsResponse.builder()
+                        .width(product.getWidth())
+                        .height(product.getHeight())
+                        .unit("cm")
+                        .build())
+                .price(product.getBasePrice())
+                .description(product.getDescription())
                 .shortDescription(meta != null ? meta.getShortDescription() : null)
                 .fullDescription(meta != null ? meta.getFullDescription() : null)
                 .images(images)
                 .image(images.isEmpty() ? null : images.get(0))
                 .popular(meta != null && Boolean.TRUE.equals(meta.getPopular()))
-                .tag(meta != null ? meta.getTag() : size.getTag())
+                .tag(meta != null ? meta.getTag() : product.getTag())
                 .features(features)
                 .accentColor(meta != null ? meta.getAccentColor() : null)
-                .specs(specs)
+                .specs(buildSpecs(product))
                 .rating(meta != null && meta.getRating() != null ? meta.getRating().doubleValue() : null)
-                .reviewCount(meta != null ? meta.getReviewCount() : 0)
+                .reviewCount(meta != null && meta.getReviewCount() != null ? meta.getReviewCount() : 0)
                 .pricingTiers(pricingTiers)
+                .variants(variants)
                 .tiktokVideos(tiktokVideos)
-                .available(true)
+                .active(active)
+                .available(active)
                 .build();
     }
 
-    private Map<String, String> buildSpecs(PrintSize size) {
+    private Map<String, String> buildSpecs(Product product) {
         Map<String, String> specs = new LinkedHashMap<>();
-        if (size.getWidth() != null && size.getHeight() != null) {
-            specs.put("dimensions", size.getWidth() + " x " + size.getHeight() + " cm");
+        if (product.getWidth() != null && product.getHeight() != null) {
+            specs.put("dimensions", product.getWidth() + " x " + product.getHeight() + " cm");
         }
         specs.put("paper", "Glossy Photo Paper");
         specs.put("finish", "High Gloss");

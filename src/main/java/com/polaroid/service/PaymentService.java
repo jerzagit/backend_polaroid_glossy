@@ -31,6 +31,7 @@ public class PaymentService {
     private final OrderRepository orderRepository;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper;
+    private final CatalogPricingService catalogPricingService;
     
     @Value("${toyyibpay.secret-key}")
     private String toyyibpaySecretKey;
@@ -70,6 +71,11 @@ public class PaymentService {
     }
 
     private Map<String, String> billOrder(Order order, String orderNumber) {
+        // Bill amount always comes from the server-calculated order total.
+        // Reject unavailable selections or pricing the customer has not seen
+        // (requires reconfirmation via POST /api/orders/{orderNumber}/confirm-price).
+        catalogPricingService.assertOrderPricingCurrent(order);
+
         MultiValueMap<String, String> params = new LinkedMultiValueMap<>();
         params.add("userSecretKey", toyyibpaySecretKey);
         params.add("categoryCode", categoryCode);

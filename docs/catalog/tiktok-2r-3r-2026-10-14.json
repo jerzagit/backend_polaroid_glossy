@@ -1,0 +1,114 @@
+{
+  "observedDate": "2026-10-14",
+  "currency": "MYR",
+  "sources": {
+    "twoR": "https://shop.tiktok.com/my/pdp/1730804048048588502",
+    "threeR": "https://shop.tiktok.com/my/pdp/1730808529421436630"
+  },
+  "notes": [
+    "Prices are package totals, not per-print prices.",
+    "No sale comparison price displayed; regular and discounted prices match.",
+    "Album bundles excluded as requested.",
+    "A4 has no supplied source and remains unchanged."
+  ],
+  "quantities": [
+    1,
+    10,
+    20,
+    50,
+    100
+  ],
+  "products": [
+    {
+      "id": "2r-no-border",
+      "prices": [
+        2.2,
+        7,
+        14,
+        35,
+        60
+      ],
+      "images": [
+        "2r-full",
+        "2r-cover",
+        "2r-details",
+        "paper-details"
+      ]
+    },
+    {
+      "id": "2r-border",
+      "prices": [
+        2,
+        6.5,
+        13,
+        32,
+        60
+      ],
+      "images": [
+        "2r-border",
+        "2r-cover",
+        "2r-details",
+        "paper-details"
+      ]
+    },
+    {
+      "id": "3r-no-border",
+      "prices": [
+        2.5,
+        8,
+        16,
+        40,
+        80
+      ],
+      "images": [
+        "3r-variant-1",
+        "3r-cover",
+        "3r-details",
+        "3r-details-2",
+        "paper-details"
+      ]
+    }
+  ],
+  "assets": [
+    {
+      "name": "2r-cover",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/87886984d2844d1596c3cf94cac0ba37~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "2r-details",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/b28f33baaaa54ff999b4119712952d21~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "paper-details",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/03aa042d24974d0c98fdd6a76dbdfb61~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "2r-full",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/04ef376436994630affa43a7b6140bda~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "2r-border",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/26ccae456fe04862a43a2b0f281f7ae4~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "3r-cover",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/7bc2d92fd0934ed09a9f42d3eeafe232~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "3r-details",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/457d6218914c446c8e652a7f93b6de96~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "3r-details-2",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/ecdc836464c0482682cb44762c34935e~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "3r-variant-1",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/76bafcfa35e94750b4c09d4cba32b051~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    },
+    {
+      "name": "3r-variant-2",
+      "url": "https://p16-oec-sg.ibyteimg.com/tos-alisg-i-aphluv4xwc-sg/a1fb96dc2e8d45e48e1e2d003c0ba459~tplv-aphluv4xwc-resize-webp:800:800.webp?dr=15582&t=555f072d&ps=933b5bde&shp=c940a200&shcp=9b759fb9&idc=my2&from=3376456192"
+    }
+  ]
+}

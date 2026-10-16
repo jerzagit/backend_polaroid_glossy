@@ -75,6 +75,32 @@ export const statsAPI = {
   getTopSizes: () => api.get('/admin/stats/top-sizes'),
 };
 
+export const catalogAPI = {
+  updateImages: (id: number, images: string[]) =>
+    api.put(`/admin/catalog/products/${id}/images`, { images }),
+  uploadImage: (id: number, file: File) => {
+    const data = new FormData();
+    data.append('file', file);
+    return api.post(`/admin/catalog/products/${id}/images`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
+  getProducts: () => api.get('/admin/catalog/products'),
+  getProduct: (id: number) => api.get(`/admin/catalog/products/${id}`),
+  createProduct: (data: Record<string, unknown>) =>
+    api.post('/admin/catalog/products', data),
+  updateProduct: (id: number, data: Record<string, unknown>) =>
+    api.patch(`/admin/catalog/products/${id}`, data),
+  createVariant: (productId: number, data: Record<string, unknown>) =>
+    api.post(`/admin/catalog/products/${productId}/variants`, data),
+  updateVariant: (variantId: number, data: Record<string, unknown>) =>
+    api.patch(`/admin/catalog/variants/${variantId}`, data),
+  createPackage: (variantId: number, data: Record<string, unknown>) =>
+    api.post(`/admin/catalog/variants/${variantId}/packages`, data),
+  updatePackage: (packageId: number, data: Record<string, unknown>) =>
+    api.patch(`/admin/catalog/packages/${packageId}`, data),
+};
+
 export const fileAPI = {
   listByOrder: (orderId: string) =>
     api.get(`/files/order/${orderId}`),

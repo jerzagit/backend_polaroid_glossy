@@ -39,7 +39,8 @@ class OrderServiceFulfillmentTest {
                 null,
                 null,
                 null,
-                new ObjectMapper());
+                new ObjectMapper(),
+                null);
         Method method = OrderService.class.getDeclaredMethod("expectedImageCount", OrderRequest.OrderItemRequest.class);
         method.setAccessible(true);
         return (int) method.invoke(service, request);
