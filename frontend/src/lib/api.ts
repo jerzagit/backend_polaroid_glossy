@@ -26,7 +26,9 @@ api.interceptors.response.use(
       if (typeof window !== 'undefined') {
         localStorage.removeItem('token');
         localStorage.removeItem('user');
-        window.location.href = '/login';
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
       }
     }
     return Promise.reject(error);
@@ -74,6 +76,15 @@ export const statsAPI = {
 };
 
 export const catalogAPI = {
+  updateImages: (id: number, images: string[]) =>
+    api.put(`/admin/catalog/products/${id}/images`, { images }),
+  uploadImage: (id: number, file: File) => {
+    const data = new FormData();
+    data.append('file', file);
+    return api.post(`/admin/catalog/products/${id}/images`, data, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
   getProducts: () => api.get('/admin/catalog/products'),
   getProduct: (id: number) => api.get(`/admin/catalog/products/${id}`),
   createProduct: (data: Record<string, unknown>) =>

@@ -109,6 +109,8 @@ export interface CatalogVariant {
 
 /** One product per print size; styles and packages hang beneath it. */
 export interface CatalogProduct {
+  image?: string | null;
+  images: string[];
   id: number;
   code: string;
   name: string;
