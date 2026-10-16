@@ -56,6 +56,7 @@ jwt:
   refresh-expiration: 604800000
 
 app:
+  public-api-url: ${PUBLIC_API_URL:https://polaroid-glossy-backend.fly.dev}
   frontend-url: ${FRONTEND_URL:https://polaroidglossy.my}
   storage:
     provider: ${STORAGE_PROVIDER:r2}

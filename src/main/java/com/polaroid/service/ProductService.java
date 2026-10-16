@@ -176,7 +176,7 @@ public class ProductService {
                 .accentColor(meta != null ? meta.getAccentColor() : null)
                 .specs(buildSpecs(product))
                 .rating(meta != null && meta.getRating() != null ? meta.getRating().doubleValue() : null)
-                .reviewCount(meta != null ? meta.getReviewCount() : 0)
+                .reviewCount(meta != null && meta.getReviewCount() != null ? meta.getReviewCount() : 0)
                 .pricingTiers(pricingTiers)
                 .variants(variants)
                 .tiktokVideos(tiktokVideos)

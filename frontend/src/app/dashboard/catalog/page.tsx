@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { catalogAPI } from '@/lib/api';
 import { CatalogProduct, ProductStyle } from '@/types';
+import ProductImages from '@/components/ProductImages';
 
 interface SizeDraft {
   name: string;
@@ -478,6 +479,8 @@ export default function CatalogPage() {
                 </div>
               )}
             </div>
+
+            <ProductImages key={selected.id} product={selected} canEdit={canEdit} onChange={applyProduct} />
 
             <h3 className="text-xs uppercase tracking-[0.15em] text-text-muted font-mono mb-3">Styles & Packages</h3>
             <div className="space-y-4">
