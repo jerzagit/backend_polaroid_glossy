@@ -11,6 +11,7 @@ public class CatalogProductUpdateRequest {
     private String displayName;
     private BigDecimal width;
     private BigDecimal height;
+    private BigDecimal basePrice;
     private String description;
     private String tag;
     private Boolean isActive;

@@ -8,6 +8,7 @@ import { useAuth } from '@/context/AuthContext';
 const menuItems = [
   { href: '/dashboard', label: 'Overview', icon: '[ ]' },
   { href: '/dashboard/orders', label: 'Orders', icon: '[~]' },
+  { href: '/dashboard/catalog', label: 'Catalog', icon: '[#]', roles: ['ADMIN', 'MARKETING'] },
   { href: '/dashboard/users', label: 'Users', icon: '[@]', roles: ['ADMIN'] },
 ];
 

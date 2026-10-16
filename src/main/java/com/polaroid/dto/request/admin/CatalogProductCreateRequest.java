@@ -6,12 +6,13 @@ import lombok.Data;
 
 import java.math.BigDecimal;
 
-/** Creates a size product (e.g. IC, 2R, 3R) in the seller catalog. */
+/** Creates a size product (e.g. IC, 2R, 3R) in the seller catalog. The
+ *  database generates the product id; {@code code} is the stable slug. */
 @Data
 public class CatalogProductCreateRequest {
-    @NotBlank(message = "ID is required")
-    @Pattern(regexp = "[a-z0-9][a-z0-9-]{1,48}", message = "ID must be lowercase letters, digits, and dashes")
-    private String id;
+    @NotBlank(message = "Code is required")
+    @Pattern(regexp = "[a-z0-9][a-z0-9-]{0,48}", message = "Code must be lowercase letters, digits, and dashes")
+    private String code;
 
     @NotBlank(message = "Name is required")
     private String name;
@@ -21,6 +22,10 @@ public class CatalogProductCreateRequest {
 
     private BigDecimal width;
     private BigDecimal height;
+
+    /** Optional legacy per-print price; packages are the source of truth. */
+    private BigDecimal basePrice;
+
     private String description;
     private String tag;
     private Boolean isActive = true;

@@ -71,10 +71,11 @@ public class OrderRequest {
         /** Legacy selection: size id + per-print price (still supported). */
         private String sizeId;
 
-        /** Size -> Style -> Package selection. Preferred over sizeId. */
-        private String productId;
-        private String variantId;
-        private String packageId;
+        /** Size -> Style -> Package selection. Preferred over sizeId.
+         *  These are the database-generated ids returned by /api/products. */
+        private Long productId;
+        private Long variantId;
+        private Long packageId;
 
         /** Number of packages purchased (defaults to 1). */
         @Min(value = 1, message = "packages must be at least 1")

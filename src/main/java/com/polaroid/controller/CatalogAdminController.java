@@ -20,6 +20,9 @@ import java.util.List;
  * Seller dashboard management of the Size -> Style -> Package catalog.
  * Reads are available to ADMIN and MARKETING; configuration changes
  * (sizes, styles, packages, prices) are restricted to ADMIN.
+ *
+ * Product / variant / package ids are database-generated, so every path
+ * variable is a numeric id.
  */
 @RestController
 @RequestMapping("/api/admin/catalog")
@@ -36,7 +39,7 @@ public class CatalogAdminController {
 
     @GetMapping("/products/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING')")
-    public ResponseEntity<ProductListingResponse> getProduct(@PathVariable String id) {
+    public ResponseEntity<ProductListingResponse> getProduct(@PathVariable Long id) {
         return ResponseEntity.ok(catalogAdminService.getProduct(id));
     }
 
@@ -50,7 +53,7 @@ public class CatalogAdminController {
     @PatchMapping("/products/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProductListingResponse> updateProduct(
-            @PathVariable String id,
+            @PathVariable Long id,
             @Valid @RequestBody CatalogProductUpdateRequest request) {
         return ResponseEntity.ok(catalogAdminService.updateProduct(id, request));
     }
@@ -58,7 +61,7 @@ public class CatalogAdminController {
     @PostMapping("/products/{productId}/variants")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProductListingResponse> createVariant(
-            @PathVariable String productId,
+            @PathVariable Long productId,
             @Valid @RequestBody CatalogVariantCreateRequest request) {
         return ResponseEntity.ok(catalogAdminService.createVariant(productId, request));
     }
@@ -66,7 +69,7 @@ public class CatalogAdminController {
     @PatchMapping("/variants/{variantId}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProductListingResponse> updateVariant(
-            @PathVariable String variantId,
+            @PathVariable Long variantId,
             @Valid @RequestBody CatalogVariantUpdateRequest request) {
         return ResponseEntity.ok(catalogAdminService.updateVariant(variantId, request));
     }
@@ -74,7 +77,7 @@ public class CatalogAdminController {
     @PostMapping("/variants/{variantId}/packages")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProductListingResponse> createPackage(
-            @PathVariable String variantId,
+            @PathVariable Long variantId,
             @Valid @RequestBody CatalogPackageCreateRequest request) {
         return ResponseEntity.ok(catalogAdminService.createPackage(variantId, request));
     }
@@ -82,7 +85,7 @@ public class CatalogAdminController {
     @PatchMapping("/packages/{packageId}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<ProductListingResponse> updatePackage(
-            @PathVariable String packageId,
+            @PathVariable Long packageId,
             @Valid @RequestBody CatalogPackageUpdateRequest request) {
         return ResponseEntity.ok(catalogAdminService.updatePackage(packageId, request));
     }

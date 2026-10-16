@@ -6,6 +6,10 @@ import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.SuperBuilder;
 
+/**
+ * A style (Full / Border) of one product. At most one variant per style per
+ * product; each variant owns its own package quantities and prices.
+ */
 @Entity
 @Table(name = "product_variants")
 @Data
@@ -14,12 +18,12 @@ import lombok.experimental.SuperBuilder;
 @Builder
 public class ProductVariant extends Auditable {
 
-    /** Stable identity ({productId}-{style}); never rewritten on price edits. */
     @Id
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(name = "product_id", nullable = false)
-    private String productId;
+    private Long productId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

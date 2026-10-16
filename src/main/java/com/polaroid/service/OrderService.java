@@ -518,12 +518,12 @@ public class OrderService {
         int totalPrints = resolved.pkg().getQuantity() * packageCount;
 
         return OrderItem.builder()
-                .sizeId(resolved.product().getId())
+                .sizeId(resolved.product().getCode())
                 .sizeName(resolved.product().getDisplayName())
-                .variantId(resolved.variant().getId())
+                .variantId(String.valueOf(resolved.variant().getId()))
                 .variantLabel(resolved.variant().getLabel())
                 .style(resolved.variant().getStyle().name())
-                .packageId(resolved.pkg().getId())
+                .packageId(String.valueOf(resolved.pkg().getId()))
                 .packageQuantity(resolved.pkg().getQuantity())
                 .packagePrice(resolved.pkg().getPrice())
                 .packageCount(packageCount)

@@ -5,10 +5,12 @@ import com.polaroid.exception.PriceConflictException;
 import com.polaroid.model.Order;
 import com.polaroid.model.OrderItem;
 import com.polaroid.model.PrintSize;
+import com.polaroid.model.Product;
 import com.polaroid.model.ProductPackage;
 import com.polaroid.model.ProductVariant;
 import com.polaroid.repository.PrintSizeRepository;
 import com.polaroid.repository.ProductPackageRepository;
+import com.polaroid.repository.ProductRepository;
 import com.polaroid.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,41 +27,44 @@ import java.math.BigDecimal;
 @RequiredArgsConstructor
 public class CatalogPricingService {
 
-    private final PrintSizeRepository printSizeRepository;
+    private final ProductRepository productRepository;
     private final ProductVariantRepository variantRepository;
     private final ProductPackageRepository packageRepository;
+    private final PrintSizeRepository printSizeRepository;
 
     /** A fully validated, currently purchasable selection. */
-    public record ResolvedPackage(PrintSize product, ProductVariant variant, ProductPackage pkg) {
+    public record ResolvedPackage(Product product, ProductVariant variant, ProductPackage pkg) {
         public BigDecimal totalPrice(int packageCount) {
             return pkg.getPrice().multiply(BigDecimal.valueOf(packageCount));
         }
     }
 
     /**
-     * Validates that the package belongs to the selected variant and size and
-     * that the product, variant, and package are all active.
+     * Validates that the package belongs to the selected variant and product and
+     * that the product, variant, and package are all active. {@code productId}
+     * and {@code variantId} may be null when resolving from an order snapshot
+     * (the package already pins the variant).
      */
     @Transactional(readOnly = true)
-    public ResolvedPackage resolveActivePackage(String productId, String variantId, String packageId) {
-        if (packageId == null || packageId.isBlank()) {
+    public ResolvedPackage resolveActivePackage(Long productId, Long variantId, Long packageId) {
+        if (packageId == null) {
             throw new BadRequestException("packageId is required");
         }
 
-        ProductPackage pkg = packageRepository.findById(packageId.trim())
+        ProductPackage pkg = packageRepository.findById(packageId)
                 .orElseThrow(() -> new BadRequestException("Package not found or no longer available: " + packageId));
         ProductVariant variant = variantRepository.findById(pkg.getVariantId())
-                .orElseThrow(() -> new BadRequestException("Variant not found for package: " + packageId));
+                .orElseThrow(() -> new BadRequestException("Style not found for package: " + packageId));
 
-        if (variantId != null && !variantId.isBlank() && !variantId.trim().equals(variant.getId())) {
-            throw new BadRequestException("Package " + packageId + " does not belong to variant " + variantId);
+        if (variantId != null && !variantId.equals(variant.getId())) {
+            throw new BadRequestException("Package " + packageId + " does not belong to style " + variantId);
         }
-        if (productId != null && !productId.isBlank() && !productId.trim().equals(variant.getProductId())) {
-            throw new BadRequestException("Package " + packageId + " does not belong to size " + productId);
+        if (productId != null && !productId.equals(variant.getProductId())) {
+            throw new BadRequestException("Package " + packageId + " does not belong to product " + productId);
         }
 
-        PrintSize product = printSizeRepository.findById(variant.getProductId())
-                .orElseThrow(() -> new BadRequestException("Size not found for package: " + packageId));
+        Product product = productRepository.findById(variant.getProductId())
+                .orElseThrow(() -> new BadRequestException("Product not found for package: " + packageId));
 
         if (!isActive(product.getIsActive()) || !isActive(variant.getIsActive()) || !isActive(pkg.getIsActive())) {
             throw new BadRequestException("Selected package is not available: " + packageId);
@@ -79,9 +84,10 @@ public class CatalogPricingService {
 
         for (OrderItem item : order.getItems()) {
             if (item.getPackageId() != null) {
-                ProductPackage pkg = packageRepository.findById(item.getPackageId()).orElse(null);
+                Long pkgId = parseLong(item.getPackageId());
+                ProductPackage pkg = pkgId == null ? null : packageRepository.findById(pkgId).orElse(null);
                 ProductVariant variant = pkg == null ? null : variantRepository.findById(pkg.getVariantId()).orElse(null);
-                PrintSize product = variant == null ? null : printSizeRepository.findById(variant.getProductId()).orElse(null);
+                Product product = variant == null ? null : productRepository.findById(variant.getProductId()).orElse(null);
 
                 boolean available = pkg != null && variant != null && product != null
                         && isActive(product.getIsActive()) && isActive(variant.getIsActive()) && isActive(pkg.getIsActive());
@@ -126,7 +132,7 @@ public class CatalogPricingService {
         for (OrderItem item : order.getItems()) {
             if (item.getPackageId() != null) {
                 ResolvedPackage resolved = resolveActivePackage(
-                        item.getSizeId(), item.getVariantId(), item.getPackageId());
+                        null, parseLong(item.getVariantId()), parseLong(item.getPackageId()));
                 int packageCount = item.getPackageCount() != null ? item.getPackageCount() : 1;
                 item.setPackageQuantity(resolved.pkg().getQuantity());
                 item.setPackagePrice(resolved.pkg().getPrice());
@@ -146,7 +152,8 @@ public class CatalogPricingService {
         for (OrderItem item : order.getItems()) {
             if (item.getPackageId() != null) {
                 int packageCount = item.getPackageCount() != null ? item.getPackageCount() : 1;
-                ProductPackage pkg = packageRepository.findById(item.getPackageId()).orElse(null);
+                Long pkgId = parseLong(item.getPackageId());
+                ProductPackage pkg = pkgId == null ? null : packageRepository.findById(pkgId).orElse(null);
                 if (pkg != null) {
                     subtotal = subtotal.add(pkg.getPrice().multiply(BigDecimal.valueOf(packageCount)));
                     continue;
@@ -155,6 +162,15 @@ public class CatalogPricingService {
             subtotal = subtotal.add(item.getTotalPrice());
         }
         return subtotal;
+    }
+
+    private Long parseLong(String value) {
+        if (value == null || value.isBlank()) return null;
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private boolean isActive(Boolean value) {

@@ -15,7 +15,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ProductPackageResponse {
-    private String id;
+    private Long id;
     private Integer quantity;
     private String price;
     private String currency;

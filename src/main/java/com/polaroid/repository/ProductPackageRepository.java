@@ -7,7 +7,9 @@ import org.springframework.stereotype.Repository;
 import java.util.List;
 
 @Repository
-public interface ProductPackageRepository extends JpaRepository<ProductPackage, String> {
-    List<ProductPackage> findByVariantIdOrderBySortOrderAsc(String variantId);
-    boolean existsByVariantIdAndQuantity(String variantId, Integer quantity);
+public interface ProductPackageRepository extends JpaRepository<ProductPackage, Long> {
+
+    List<ProductPackage> findByVariantIdOrderBySortOrderAscQuantityAsc(Long variantId);
+
+    boolean existsByVariantIdAndQuantity(Long variantId, Integer quantity);
 }

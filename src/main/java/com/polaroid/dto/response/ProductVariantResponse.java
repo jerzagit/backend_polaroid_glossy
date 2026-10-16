@@ -13,7 +13,7 @@ import java.util.List;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ProductVariantResponse {
-    private String id;
+    private Long id;
     private ProductStyle style;
     private String label;
     private Boolean active;

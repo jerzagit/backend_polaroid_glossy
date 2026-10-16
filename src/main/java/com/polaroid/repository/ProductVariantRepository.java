@@ -9,8 +9,11 @@ import java.util.List;
 import java.util.Optional;
 
 @Repository
-public interface ProductVariantRepository extends JpaRepository<ProductVariant, String> {
-    List<ProductVariant> findByProductIdOrderBySortOrderAsc(String productId);
-    Optional<ProductVariant> findByProductIdAndStyle(String productId, ProductStyle style);
-    boolean existsByProductIdAndStyle(String productId, ProductStyle style);
+public interface ProductVariantRepository extends JpaRepository<ProductVariant, Long> {
+
+    List<ProductVariant> findByProductIdOrderBySortOrderAscIdAsc(Long productId);
+
+    Optional<ProductVariant> findByProductIdAndStyle(Long productId, ProductStyle style);
+
+    boolean existsByProductIdAndStyle(Long productId, ProductStyle style);
 }

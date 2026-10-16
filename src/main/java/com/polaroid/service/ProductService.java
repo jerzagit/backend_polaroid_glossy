@@ -9,16 +9,18 @@ import com.polaroid.dto.response.ProductPackageResponse;
 import com.polaroid.dto.response.ProductVariantResponse;
 import com.polaroid.dto.response.TikTokVideoResponse;
 import com.polaroid.exception.ResourceNotFoundException;
-import com.polaroid.model.PrintSize;
 import com.polaroid.model.PrintSizePricingTier;
+import com.polaroid.model.Product;
+import com.polaroid.model.ProductAlias;
 import com.polaroid.model.ProductMeta;
 import com.polaroid.model.ProductPackage;
 import com.polaroid.model.ProductVariant;
 import com.polaroid.model.enums.ProductStyle;
 import com.polaroid.repository.PrintSizePricingTierRepository;
-import com.polaroid.repository.PrintSizeRepository;
+import com.polaroid.repository.ProductAliasRepository;
 import com.polaroid.repository.ProductMetaRepository;
 import com.polaroid.repository.ProductPackageRepository;
+import com.polaroid.repository.ProductRepository;
 import com.polaroid.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -31,17 +33,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ProductService {
 
-    /**
-     * Legacy product ids that now resolve to a style variant of a canonical
-     * product, so existing links and carts keep working after grouping
-     * Size -> Style -> Package under one product.
-     */
-    private static final Map<String, LegacyAlias> LEGACY_ALIASES = Map.of(
-            "ic-border", new LegacyAlias("ic", ProductStyle.BORDER));
-
-    private record LegacyAlias(String canonicalProductId, ProductStyle style) {}
-
-    private final PrintSizeRepository printSizeRepository;
+    private final ProductRepository productRepository;
+    private final ProductAliasRepository productAliasRepository;
     private final ProductMetaRepository productMetaRepository;
     private final PrintSizePricingTierRepository pricingTierRepository;
     private final ProductVariantRepository variantRepository;
@@ -59,78 +52,68 @@ public class ProductService {
         return buildAllProducts(true);
     }
 
+    /**
+     * Storefront lookup by numeric id, by product code (ic, 2r, ...), or by a
+     * legacy alias (ic-border, 2r-no-border, ...). Alias links resolve to the
+     * canonical product filtered to the aliased style.
+     */
     @Transactional(readOnly = true)
-    public ProductListingResponse getProductById(String id) {
-        return buildProductById(id, false);
+    public ProductListingResponse getProductById(String idOrCode) {
+        String key = idOrCode == null ? "" : idOrCode.trim().toLowerCase();
+        if (key.isEmpty()) {
+            throw new ResourceNotFoundException("Product not found: " + idOrCode);
+        }
+
+        Product product;
+        ProductStyle styleFilter = null;
+        if (key.matches("\\d+")) {
+            product = productRepository.findById(Long.valueOf(key))
+                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + idOrCode));
+        } else {
+            Optional<Product> byCode = productRepository.findByCode(key);
+            if (byCode.isPresent()) {
+                product = byCode.get();
+            } else {
+                ProductAlias alias = productAliasRepository.findById(key)
+                        .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + idOrCode));
+                styleFilter = alias.getStyle();
+                product = productRepository.findById(alias.getProductId())
+                        .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + idOrCode));
+            }
+        }
+        return buildListing(product, styleFilter, false);
     }
 
     @Transactional(readOnly = true)
-    public ProductListingResponse getProductForAdmin(String id) {
-        return buildProductById(id, true);
+    public ProductListingResponse getProductForAdmin(Long id) {
+        Product product = productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
+        return buildListing(product, null, true);
     }
 
     private List<ProductListingResponse> buildAllProducts(boolean includeInactive) {
-        List<PrintSize> sizes = includeInactive
-                ? printSizeRepository.findAll()
-                : printSizeRepository.findByIsActiveTrue();
-        Map<String, ProductMeta> metaMap = productMetaRepository.findAll().stream()
-                .collect(Collectors.toMap(ProductMeta::getId, m -> m));
-        Map<String, List<PrintSizePricingTier>> tiersMap = pricingTierRepository.findAll().stream()
-                .collect(Collectors.groupingBy(PrintSizePricingTier::getSizeId));
-
-        return sizes.stream()
-                .map(size -> buildProductListing(
-                        size,
-                        metaMap.get(size.getId()),
-                        tiersMap.getOrDefault(size.getId(), List.of()),
-                        variantsFor(size.getId(), null, includeInactive),
-                        includeInactive))
+        List<Product> products = includeInactive
+                ? productRepository.findAllByOrderBySortOrderAscIdAsc()
+                : productRepository.findByIsActiveTrueOrderBySortOrderAscIdAsc();
+        return products.stream()
+                .map(product -> buildListing(product, null, includeInactive))
                 .collect(Collectors.toList());
     }
 
-    private ProductListingResponse buildProductById(String id, boolean includeInactive) {
-        String normalizedId = id.trim().toLowerCase();
-        PrintSize printSize = printSizeRepository.findById(normalizedId)
-                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
-        ProductMeta meta = productMetaRepository.findById(normalizedId).orElse(null);
-        List<PrintSizePricingTier> tiers = pricingTierRepository.findBySizeIdOrderByQuantityAsc(normalizedId);
-
-        // Legacy aliases keep their own product identity for existing links,
-        // but variants and prices come from the canonical product so there is
-        // a single source of truth per style.
-        LegacyAlias alias = LEGACY_ALIASES.get(normalizedId);
-        String variantSourceProductId = printSize.getId();
-        ProductStyle styleFilter = null;
-        if (alias != null) {
-            ProductStyle aliasStyle = alias.style();
-            printSizeRepository.findById(alias.canonicalProductId())
-                    .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + alias.canonicalProductId()));
-            ProductMeta canonicalMeta = productMetaRepository.findById(alias.canonicalProductId()).orElse(null);
-            if (canonicalMeta != null) meta = canonicalMeta;
-            tiers = pricingTierRepository.findBySizeIdOrderByQuantityAsc(alias.canonicalProductId());
-            variantSourceProductId = alias.canonicalProductId();
-            styleFilter = aliasStyle;
-        }
-
-        return buildProductListing(
-                printSize,
-                meta,
-                tiers,
-                variantsFor(variantSourceProductId, styleFilter, includeInactive),
-                includeInactive);
+    private ProductListingResponse buildListing(Product product, ProductStyle styleFilter, boolean includeInactive) {
+        ProductMeta meta = productMetaRepository.findById(product.getCode()).orElse(null);
+        List<PrintSizePricingTier> tiers = pricingTierRepository
+                .findBySizeIdOrderByQuantityAsc(product.getCode());
+        List<ProductVariantResponse> variants = variantsFor(product.getId(), styleFilter, includeInactive);
+        return buildProductListing(product, meta, tiers, variants);
     }
 
-    /** Variants of a product; when {@code styleFilter} is set only that style is returned
-     *  (used by legacy aliases such as ic-border -> ic BORDER). */
-    private List<ProductVariantResponse> variantsFor(String productId, ProductStyle styleFilter, boolean includeInactive) {
-        List<ProductVariant> variants = variantRepository.findByProductIdOrderBySortOrderAsc(productId).stream()
+    /** Variants of a product; when {@code styleFilter} is set only that style is
+     *  returned (used by legacy aliases such as ic-border -> IC BORDER). */
+    private List<ProductVariantResponse> variantsFor(Long productId, ProductStyle styleFilter, boolean includeInactive) {
+        return variantRepository.findByProductIdOrderBySortOrderAscIdAsc(productId).stream()
                 .filter(v -> styleFilter == null || v.getStyle() == styleFilter)
                 .filter(v -> includeInactive || Boolean.TRUE.equals(v.getIsActive()))
-                .sorted(Comparator.comparing(ProductVariant::getSortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
-                        .thenComparing(ProductVariant::getId))
-                .collect(Collectors.toList());
-
-        return variants.stream()
                 .map(v -> ProductVariantResponse.builder()
                         .id(v.getId())
                         .style(v.getStyle())
@@ -141,11 +124,9 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
-    private List<ProductPackageResponse> packagesFor(String variantId, boolean includeInactive) {
-        return packageRepository.findByVariantIdOrderBySortOrderAsc(variantId).stream()
+    private List<ProductPackageResponse> packagesFor(Long variantId, boolean includeInactive) {
+        return packageRepository.findByVariantIdOrderBySortOrderAscQuantityAsc(variantId).stream()
                 .filter(p -> includeInactive || Boolean.TRUE.equals(p.getIsActive()))
-                .sorted(Comparator.comparing(ProductPackage::getSortOrder, Comparator.nullsLast(Comparator.naturalOrder()))
-                        .thenComparing(ProductPackage::getQuantity))
                 .map(p -> ProductPackageResponse.builder()
                         .id(p.getId())
                         .quantity(p.getQuantity())
@@ -156,8 +137,8 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
-    private ProductListingResponse buildProductListing(PrintSize size, ProductMeta meta, List<PrintSizePricingTier> tiers,
-                                                       List<ProductVariantResponse> variants, boolean includeInactive) {
+    private ProductListingResponse buildProductListing(Product product, ProductMeta meta, List<PrintSizePricingTier> tiers,
+                                                       List<ProductVariantResponse> variants) {
         List<String> images = parseJsonArray(meta != null ? meta.getImages() : null);
         List<String> features = parseJsonArray(meta != null ? meta.getFeatures() : null);
         List<TikTokVideoResponse> tiktokVideos = parseTikTokVideos(meta != null ? meta.getTiktokVideos() : null);
@@ -169,31 +150,31 @@ public class ProductService {
                         .build())
                 .collect(Collectors.toList());
 
-        Map<String, String> specs = buildSpecs(size);
-        boolean active = Boolean.TRUE.equals(size.getIsActive());
+        boolean active = Boolean.TRUE.equals(product.getIsActive());
 
         return ProductListingResponse.builder()
-                .id(size.getId())
-                .name(size.getName())
-                .displayName(size.getDisplayName())
-                .width(size.getWidth())
-                .height(size.getHeight())
+                .id(product.getId())
+                .code(product.getCode())
+                .name(product.getName())
+                .displayName(product.getDisplayName())
+                .width(product.getWidth())
+                .height(product.getHeight())
                 .dimensions(ProductDimensionsResponse.builder()
-                        .width(size.getWidth())
-                        .height(size.getHeight())
+                        .width(product.getWidth())
+                        .height(product.getHeight())
                         .unit("cm")
                         .build())
-                .price(size.getPrice())
-                .description(size.getDescription())
+                .price(product.getBasePrice())
+                .description(product.getDescription())
                 .shortDescription(meta != null ? meta.getShortDescription() : null)
                 .fullDescription(meta != null ? meta.getFullDescription() : null)
                 .images(images)
                 .image(images.isEmpty() ? null : images.get(0))
                 .popular(meta != null && Boolean.TRUE.equals(meta.getPopular()))
-                .tag(meta != null ? meta.getTag() : size.getTag())
+                .tag(meta != null ? meta.getTag() : product.getTag())
                 .features(features)
                 .accentColor(meta != null ? meta.getAccentColor() : null)
-                .specs(specs)
+                .specs(buildSpecs(product))
                 .rating(meta != null && meta.getRating() != null ? meta.getRating().doubleValue() : null)
                 .reviewCount(meta != null ? meta.getReviewCount() : 0)
                 .pricingTiers(pricingTiers)
@@ -204,10 +185,10 @@ public class ProductService {
                 .build();
     }
 
-    private Map<String, String> buildSpecs(PrintSize size) {
+    private Map<String, String> buildSpecs(Product product) {
         Map<String, String> specs = new LinkedHashMap<>();
-        if (size.getWidth() != null && size.getHeight() != null) {
-            specs.put("dimensions", size.getWidth() + " x " + size.getHeight() + " cm");
+        if (product.getWidth() != null && product.getHeight() != null) {
+            specs.put("dimensions", product.getWidth() + " x " + product.getHeight() + " cm");
         }
         specs.put("paper", "Glossy Photo Paper");
         specs.put("finish", "High Gloss");

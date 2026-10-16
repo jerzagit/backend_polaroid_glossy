@@ -10,11 +10,13 @@ import com.polaroid.dto.response.ProductListingResponse;
 import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.PrintSize;
+import com.polaroid.model.Product;
 import com.polaroid.model.ProductPackage;
 import com.polaroid.model.ProductVariant;
 import com.polaroid.model.enums.ProductStyle;
 import com.polaroid.repository.PrintSizeRepository;
 import com.polaroid.repository.ProductPackageRepository;
+import com.polaroid.repository.ProductRepository;
 import com.polaroid.repository.ProductVariantRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,10 @@ import java.util.Map;
  * Seller-managed Size -> Style -> Package configuration.
  * Who changed a price and when is captured by the audit columns
  * (created_by / updated_by / created_at / updated_at) via JPA auditing.
+ *
+ * Products carry a database-generated id; the seller never supplies one.
+ * A matching legacy print_sizes row is kept in step so the older per-size
+ * endpoint and any legacy cart links stay coherent.
  */
 @Service
 @RequiredArgsConstructor
@@ -37,6 +43,7 @@ public class CatalogAdminService {
             ProductStyle.FULL, "Full",
             ProductStyle.BORDER, "Border (Polaroid)");
 
+    private final ProductRepository productRepository;
     private final PrintSizeRepository printSizeRepository;
     private final ProductVariantRepository variantRepository;
     private final ProductPackageRepository packageRepository;
@@ -50,63 +57,67 @@ public class CatalogAdminService {
     }
 
     @Transactional(readOnly = true)
-    public ProductListingResponse getProduct(String id) {
-        return productService.getProductForAdmin(normalize(id));
-    }
-
-    @Transactional
-    public ProductListingResponse createProduct(CatalogProductCreateRequest request) {
-        String id = normalize(request.getId());
-        if (printSizeRepository.existsById(id)) {
-            throw new BadRequestException("Size already exists: " + id);
-        }
-        validateDimensions(request.getWidth(), request.getHeight());
-
-        PrintSize size = PrintSize.builder()
-                .id(id)
-                .name(request.getName().trim())
-                .displayName(request.getDisplayName().trim())
-                .width(request.getWidth())
-                .height(request.getHeight())
-                // Base per-print price kept for legacy carts; packages are the
-                // source of truth for new purchases.
-                .price(BigDecimal.ZERO)
-                .description(request.getDescription())
-                .tag(request.getTag())
-                .isActive(request.getIsActive() == null || request.getIsActive())
-                .build();
-        printSizeRepository.save(size);
+    public ProductListingResponse getProduct(Long id) {
         return productService.getProductForAdmin(id);
     }
 
     @Transactional
-    public ProductListingResponse updateProduct(String id, CatalogProductUpdateRequest request) {
-        PrintSize size = findSize(id);
-        if (request.getName() != null) size.setName(request.getName().trim());
-        if (request.getDisplayName() != null) size.setDisplayName(request.getDisplayName().trim());
-        if (request.getWidth() != null) size.setWidth(request.getWidth());
-        if (request.getHeight() != null) size.setHeight(request.getHeight());
-        if (request.getDescription() != null) size.setDescription(request.getDescription());
-        if (request.getTag() != null) size.setTag(request.getTag());
-        if (request.getIsActive() != null) size.setIsActive(request.getIsActive());
-        validateDimensions(size.getWidth(), size.getHeight());
-        printSizeRepository.save(size);
-        return productService.getProductForAdmin(size.getId());
+    public ProductListingResponse createProduct(CatalogProductCreateRequest request) {
+        String code = normalizeCode(request.getCode());
+        if (productRepository.existsByCode(code)) {
+            throw new BadRequestException("Size already exists: " + code);
+        }
+        if (printSizeRepository.existsById(code)) {
+            throw new BadRequestException("Size already exists: " + code);
+        }
+        validateDimensions(request.getWidth(), request.getHeight());
+
+        Product product = Product.builder()
+                .code(code)
+                .name(request.getName().trim())
+                .displayName(request.getDisplayName().trim())
+                .width(request.getWidth())
+                .height(request.getHeight())
+                .basePrice(request.getBasePrice())
+                .description(request.getDescription())
+                .tag(request.getTag())
+                .isActive(request.getIsActive() == null || request.getIsActive())
+                .sortOrder(0)
+                .build();
+        product = productRepository.save(product);
+        syncLegacyPrintSize(product);
+        return productService.getProductForAdmin(product.getId());
+    }
+
+    @Transactional
+    public ProductListingResponse updateProduct(Long id, CatalogProductUpdateRequest request) {
+        Product product = findProduct(id);
+        if (request.getName() != null) product.setName(request.getName().trim());
+        if (request.getDisplayName() != null) product.setDisplayName(request.getDisplayName().trim());
+        if (request.getWidth() != null) product.setWidth(request.getWidth());
+        if (request.getHeight() != null) product.setHeight(request.getHeight());
+        if (request.getBasePrice() != null) product.setBasePrice(request.getBasePrice());
+        if (request.getDescription() != null) product.setDescription(request.getDescription());
+        if (request.getTag() != null) product.setTag(request.getTag());
+        if (request.getIsActive() != null) product.setIsActive(request.getIsActive());
+        validateDimensions(product.getWidth(), product.getHeight());
+        productRepository.save(product);
+        syncLegacyPrintSize(product);
+        return productService.getProductForAdmin(product.getId());
     }
 
     /* ---------- variants (styles) ---------- */
 
     @Transactional
-    public ProductListingResponse createVariant(String productId, CatalogVariantCreateRequest request) {
-        PrintSize size = findSize(productId);
+    public ProductListingResponse createVariant(Long productId, CatalogVariantCreateRequest request) {
+        Product product = findProduct(productId);
         ProductStyle style = request.getStyle();
-        if (variantRepository.existsByProductIdAndStyle(size.getId(), style)) {
-            throw new BadRequestException("Style " + style + " already exists for size " + size.getId());
+        if (variantRepository.existsByProductIdAndStyle(product.getId(), style)) {
+            throw new BadRequestException("Style " + style + " already exists for size " + product.getCode());
         }
 
         ProductVariant variant = ProductVariant.builder()
-                .id(size.getId() + "-" + style.name().toLowerCase())
-                .productId(size.getId())
+                .productId(product.getId())
                 .style(style)
                 .label(request.getLabel() != null && !request.getLabel().isBlank()
                         ? request.getLabel().trim()
@@ -115,11 +126,11 @@ public class CatalogAdminService {
                 .isActive(request.getIsActive() == null || request.getIsActive())
                 .build();
         variantRepository.save(variant);
-        return productService.getProductForAdmin(size.getId());
+        return productService.getProductForAdmin(product.getId());
     }
 
     @Transactional
-    public ProductListingResponse updateVariant(String variantId, CatalogVariantUpdateRequest request) {
+    public ProductListingResponse updateVariant(Long variantId, CatalogVariantUpdateRequest request) {
         ProductVariant variant = findVariant(variantId);
         if (request.getLabel() != null && !request.getLabel().isBlank()) variant.setLabel(request.getLabel().trim());
         if (request.getIsActive() != null) variant.setIsActive(request.getIsActive());
@@ -131,9 +142,9 @@ public class CatalogAdminService {
     /* ---------- packages ---------- */
 
     @Transactional
-    public ProductListingResponse createPackage(String variantId, CatalogPackageCreateRequest request) {
+    public ProductListingResponse createPackage(Long variantId, CatalogPackageCreateRequest request) {
         ProductVariant variant = findVariant(variantId);
-        if (request.getQuantity() <= 0) {
+        if (request.getQuantity() == null || request.getQuantity() <= 0) {
             throw new BadRequestException("Quantity must be a positive number of prints");
         }
         if (request.getPrice() == null || request.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
@@ -145,7 +156,6 @@ public class CatalogAdminService {
         }
 
         ProductPackage pkg = ProductPackage.builder()
-                .id(variant.getId() + "-" + request.getQuantity())
                 .variantId(variant.getId())
                 .quantity(request.getQuantity())
                 .price(request.getPrice().setScale(2))
@@ -158,7 +168,7 @@ public class CatalogAdminService {
     }
 
     @Transactional
-    public ProductListingResponse updatePackage(String packageId, CatalogPackageUpdateRequest request) {
+    public ProductListingResponse updatePackage(Long packageId, CatalogPackageUpdateRequest request) {
         ProductPackage pkg = findPackage(packageId);
         if (request.getPrice() != null) {
             if (request.getPrice().compareTo(BigDecimal.ZERO) <= 0) {
@@ -176,19 +186,39 @@ public class CatalogAdminService {
 
     /* ---------- helpers ---------- */
 
-    private PrintSize findSize(String id) {
-        return printSizeRepository.findById(normalize(id))
-                .orElseThrow(() -> new ResourceNotFoundException("Size not found: " + id));
+    private Product findProduct(Long id) {
+        return productRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + id));
     }
 
-    private ProductVariant findVariant(String id) {
-        return variantRepository.findById(normalize(id))
+    private ProductVariant findVariant(Long id) {
+        return variantRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Variant not found: " + id));
     }
 
-    private ProductPackage findPackage(String id) {
-        return packageRepository.findById(normalize(id))
+    private ProductPackage findPackage(Long id) {
+        return packageRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Package not found: " + id));
+    }
+
+    /** Keeps the legacy print_sizes row aligned with the canonical product. */
+    private void syncLegacyPrintSize(Product product) {
+        PrintSize size = printSizeRepository.findById(product.getCode())
+                .orElseGet(() -> PrintSize.builder()
+                        .id(product.getCode())
+                        .price(product.getBasePrice() != null ? product.getBasePrice() : BigDecimal.ZERO)
+                        .build());
+        size.setName(product.getName());
+        size.setDisplayName(product.getDisplayName());
+        size.setWidth(product.getWidth());
+        size.setHeight(product.getHeight());
+        size.setDescription(product.getDescription());
+        size.setTag(product.getTag());
+        size.setIsActive(product.getIsActive());
+        if (product.getBasePrice() != null) {
+            size.setPrice(product.getBasePrice());
+        }
+        printSizeRepository.save(size);
     }
 
     private void validateDimensions(BigDecimal width, BigDecimal height) {
@@ -200,7 +230,7 @@ public class CatalogAdminService {
         }
     }
 
-    private String normalize(String id) {
-        return id == null ? null : id.trim().toLowerCase();
+    private String normalizeCode(String code) {
+        return code == null ? null : code.trim().toLowerCase();
     }
 }

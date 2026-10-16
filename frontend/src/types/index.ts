@@ -87,6 +87,42 @@ export interface PaginatedResponse<T> {
   number: number;
 }
 
+export type ProductStyle = 'FULL' | 'BORDER';
+
+/** A purchasable package: whole-package price, serialized as an exact string. */
+export interface CatalogPackage {
+  id: number;
+  quantity: number;
+  price: string;
+  currency: string;
+  active: boolean;
+}
+
+/** A style (Full / Border) of a size, each with its own packages. */
+export interface CatalogVariant {
+  id: number;
+  style: ProductStyle;
+  label: string;
+  active: boolean;
+  packages: CatalogPackage[];
+}
+
+/** One product per print size; styles and packages hang beneath it. */
+export interface CatalogProduct {
+  id: number;
+  code: string;
+  name: string;
+  displayName: string;
+  width?: number;
+  height?: number;
+  price?: number;
+  description?: string;
+  tag?: string;
+  active?: boolean;
+  available?: boolean;
+  variants: CatalogVariant[];
+}
+
 export interface UploadedFile {
   name: string;
   key: string;

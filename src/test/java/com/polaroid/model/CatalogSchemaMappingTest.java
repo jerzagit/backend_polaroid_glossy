@@ -10,46 +10,105 @@ import java.nio.file.Path;
 import java.sql.DriverManager;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/** Validates the V23 catalog migrations against the JPA entity mappings. */
+/** Validates the V26 / V27 catalog migrations against the JPA entity mappings. */
 class CatalogSchemaMappingTest {
 
     @Test
-    void validatesCatalogMigrationsAndReadsDecimalPrices() throws Exception {
+    void validatesProductsCatalogMigrationsAndReadsDecimalPrices() throws Exception {
         String url = "jdbc:h2:mem:catalog_mapping;MODE=PostgreSQL;DB_CLOSE_DELAY=-1";
         try (var connection = DriverManager.getConnection(url, "sa", "")) {
             try (var statement = connection.createStatement()) {
-                statement.execute("CREATE TABLE print_sizes (id VARCHAR(50) PRIMARY KEY)");
+                // Minimal legacy schema that V26 / V27 build on.
+                statement.execute("CREATE TABLE print_sizes ("
+                        + "id VARCHAR(255) PRIMARY KEY, name VARCHAR(255), display_name VARCHAR(255),"
+                        + "width DECIMAL(5,2), height DECIMAL(5,2), price DECIMAL(10,2),"
+                        + "description TEXT, is_active BOOLEAN, tag VARCHAR(50))");
                 statement.execute("CREATE TABLE print_size_pricing_tiers ("
                         + "id VARCHAR(50) PRIMARY KEY, size_id VARCHAR(50) NOT NULL,"
                         + "quantity INT NOT NULL, regular_price DECIMAL(10,2) NOT NULL,"
                         + "discounted_price DECIMAL(10,2) NOT NULL, sort_order INT DEFAULT 0)");
-                statement.execute("INSERT INTO print_sizes (id) VALUES ('ic')");
+                statement.execute("CREATE TABLE product_meta ("
+                        + "id VARCHAR(255) PRIMARY KEY, tag VARCHAR(50), accent_color VARCHAR(32),"
+                        + "images TEXT, features TEXT, tiktok_videos TEXT, short_description TEXT,"
+                        + "full_description TEXT, rating DECIMAL(3,2), review_count INT, popular BOOLEAN)");
+
+                statement.execute("INSERT INTO print_sizes (id, name, display_name, price, is_active) VALUES"
+                        + " ('ic', 'IC', 'IC', 2.00, TRUE),"
+                        + " ('ic-border', 'IC Border', 'IC Border', 2.50, TRUE),"
+                        + " ('2r-no-border', '2R', '2R', 2.20, TRUE),"
+                        + " ('2r-border', '2R Border', '2R Border', 2.00, TRUE),"
+                        + " ('3r-no-border', '3R', '3R', 2.50, TRUE)");
+                statement.execute("INSERT INTO product_meta (id, tag) VALUES"
+                        + " ('2r-no-border', '2R'), ('3r-no-border', '3R')");
                 statement.execute("INSERT INTO print_size_pricing_tiers VALUES"
-                        + " ('tier-ic-25', 'ic', 25, 5.00, 4.50, 2)");
+                        + " ('tier-2r-10', '2r-no-border', 10, 7.00, 7.00, 1)");
             }
-            runScript(connection, "V23__Create_product_variants_and_packages.sql");
-            runScript(connection, "V24__Seed_ic_variants_and_packages.sql");
+
+            runScript(connection, "V26__Create_products_catalog.sql");
+            runScript(connection, "V27__Seed_products_and_retire_duplicate_sizes.sql");
+
             try (var statement = connection.createStatement()) {
                 var rs = statement.executeQuery(
-                        "SELECT price FROM product_packages WHERE id = 'ic-full-10'");
+                        "SELECT COUNT(*) FROM products WHERE is_active = TRUE");
                 rs.next();
-                assertEquals(new BigDecimal("6.00"), rs.getBigDecimal(1));
+                assertEquals(10, rs.getInt(1));
+
                 rs = statement.executeQuery(
-                        "SELECT price FROM product_packages WHERE id = 'ic-border-10'");
+                        "SELECT p.id, v.style, pkg.price FROM product_packages pkg"
+                        + " JOIN product_variants v ON v.id = pkg.variant_id"
+                        + " JOIN products p ON p.id = v.product_id"
+                        + " WHERE p.code = 'ic' AND v.style = 'FULL' AND pkg.quantity = 10");
+                rs.next();
+                long icId = rs.getLong(1);
+                assertEquals(new BigDecimal("6.00"), rs.getBigDecimal(3));
+
+                rs = statement.executeQuery(
+                        "SELECT pkg.price FROM product_packages pkg"
+                        + " JOIN product_variants v ON v.id = pkg.variant_id"
+                        + " JOIN products p ON p.id = v.product_id"
+                        + " WHERE p.code = 'ic' AND v.style = 'BORDER' AND pkg.quantity = 10");
                 rs.next();
                 assertEquals(new BigDecimal("5.00"), rs.getBigDecimal(1));
+
+                // IC has no 25-print package (the retired 25 tier is gone).
                 rs = statement.executeQuery(
-                        "SELECT COUNT(*) FROM product_packages WHERE quantity = 25");
+                        "SELECT COUNT(*) FROM product_packages pkg"
+                        + " JOIN product_variants v ON v.id = pkg.variant_id"
+                        + " JOIN products p ON p.id = v.product_id"
+                        + " WHERE p.code = 'ic' AND pkg.quantity = 25");
                 rs.next();
                 assertEquals(0, rs.getInt(1));
+
+                // 4R offers Full only.
                 rs = statement.executeQuery(
-                        "SELECT COUNT(*) FROM print_size_pricing_tiers WHERE size_id IN ('ic', 'ic-border')");
+                        "SELECT COUNT(*) FROM product_variants v JOIN products p ON p.id = v.product_id"
+                        + " WHERE p.code = '4r' AND v.style = 'BORDER'");
+                rs.next();
+                assertEquals(0, rs.getInt(1));
+
+                rs = statement.executeQuery(
+                        "SELECT product_id, style FROM product_aliases WHERE legacy_code = 'ic-border'");
+                rs.next();
+                assertEquals(icId, rs.getLong(1));
+                assertEquals("BORDER", rs.getString(2));
+
+                rs = statement.executeQuery(
+                        "SELECT is_active FROM print_sizes WHERE id = '2r-no-border'");
+                rs.next();
+                assertFalse(rs.getBoolean(1));
+
+                rs = statement.executeQuery(
+                        "SELECT COUNT(*) FROM print_size_pricing_tiers WHERE size_id = '2r-no-border'");
                 rs.next();
                 assertEquals(0, rs.getInt(1));
             }
         }
+
         try (var factory = new Configuration()
+                .addAnnotatedClass(Product.class)
+                .addAnnotatedClass(ProductAlias.class)
                 .addAnnotatedClass(ProductVariant.class)
                 .addAnnotatedClass(ProductPackage.class)
                 .setProperty("hibernate.connection.url", url)
@@ -58,14 +117,22 @@ class CatalogSchemaMappingTest {
                 .setProperty("hibernate.hbm2ddl.auto", "validate")
                 .buildSessionFactory();
              var session = factory.openSession()) {
-            ProductPackage pkg = session.get(ProductPackage.class, "ic-border-10");
-            assertEquals(new BigDecimal("5.00"), pkg.getPrice());
-            assertEquals(10, pkg.getQuantity());
+            Product ic = session.createQuery("from Product where code = 'ic'", Product.class).getSingleResult();
+            assertEquals("IC", ic.getName());
+            assertEquals(new BigDecimal("2.00"), ic.getBasePrice());
 
-            ProductVariant variant = session.get(ProductVariant.class, "ic-border");
-            assertEquals(ProductStyle.BORDER, variant.getStyle());
-            assertEquals("Border (Polaroid)", variant.getLabel());
-            assertEquals("ic", variant.getProductId());
+            ProductVariant borderVariant = session.createQuery(
+                            "from ProductVariant where productId = :pid and style = :style", ProductVariant.class)
+                    .setParameter("pid", ic.getId())
+                    .setParameter("style", ProductStyle.BORDER)
+                    .getSingleResult();
+            assertEquals("Border (Polaroid)", borderVariant.getLabel());
+
+            ProductPackage pkg = session.createQuery(
+                            "from ProductPackage where variantId = :vid and quantity = 10", ProductPackage.class)
+                    .setParameter("vid", borderVariant.getId())
+                    .getSingleResult();
+            assertEquals(new BigDecimal("5.00"), pkg.getPrice());
         }
     }
 

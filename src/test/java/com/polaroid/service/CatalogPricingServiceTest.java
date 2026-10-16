@@ -5,12 +5,14 @@ import com.polaroid.exception.PriceConflictException;
 import com.polaroid.model.Order;
 import com.polaroid.model.OrderItem;
 import com.polaroid.model.PrintSize;
+import com.polaroid.model.Product;
 import com.polaroid.model.ProductPackage;
 import com.polaroid.model.ProductVariant;
 import com.polaroid.model.enums.PaymentStatus;
 import com.polaroid.model.enums.ProductStyle;
 import com.polaroid.repository.PrintSizeRepository;
 import com.polaroid.repository.ProductPackageRepository;
+import com.polaroid.repository.ProductRepository;
 import com.polaroid.repository.ProductVariantRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -27,11 +29,12 @@ import static org.mockito.Mockito.when;
 class CatalogPricingServiceTest {
 
     private PrintSizeRepository printSizeRepository;
+    private ProductRepository productRepository;
     private ProductVariantRepository variantRepository;
     private ProductPackageRepository packageRepository;
     private CatalogPricingService service;
 
-    private PrintSize ic;
+    private Product ic;
     private ProductVariant icFull;
     private ProductVariant icBorder;
     private ProductPackage full10;
@@ -40,74 +43,76 @@ class CatalogPricingServiceTest {
     @BeforeEach
     void setUp() {
         printSizeRepository = mock(PrintSizeRepository.class);
+        productRepository = mock(ProductRepository.class);
         variantRepository = mock(ProductVariantRepository.class);
         packageRepository = mock(ProductPackageRepository.class);
-        service = new CatalogPricingService(printSizeRepository, variantRepository, packageRepository);
+        service = new CatalogPricingService(productRepository, variantRepository, packageRepository, printSizeRepository);
 
-        ic = PrintSize.builder().id("ic").name("IC").displayName("IC (5.5 x 8.9 cm)")
-                .price(new BigDecimal("2.00")).isActive(true).build();
-        icFull = ProductVariant.builder().id("ic-full").productId("ic").style(ProductStyle.FULL)
+        ic = Product.builder().id(1L).code("ic").name("IC").displayName("IC (5.5 x 8.9 cm)")
+                .basePrice(new BigDecimal("2.00")).isActive(true).build();
+        icFull = ProductVariant.builder().id(10L).productId(1L).style(ProductStyle.FULL)
                 .label("Full").isActive(true).build();
-        icBorder = ProductVariant.builder().id("ic-border").productId("ic").style(ProductStyle.BORDER)
+        icBorder = ProductVariant.builder().id(11L).productId(1L).style(ProductStyle.BORDER)
                 .label("Border (Polaroid)").isActive(true).build();
-        full10 = ProductPackage.builder().id("ic-full-10").variantId("ic-full")
+        full10 = ProductPackage.builder().id(100L).variantId(10L)
                 .quantity(10).price(new BigDecimal("6.00")).isActive(true).build();
-        border10 = ProductPackage.builder().id("ic-border-10").variantId("ic-border")
+        border10 = ProductPackage.builder().id(101L).variantId(11L)
                 .quantity(10).price(new BigDecimal("5.00")).isActive(true).build();
 
-        when(printSizeRepository.findById("ic")).thenReturn(Optional.of(ic));
-        when(variantRepository.findById("ic-full")).thenReturn(Optional.of(icFull));
-        when(variantRepository.findById("ic-border")).thenReturn(Optional.of(icBorder));
-        when(packageRepository.findById("ic-full-10")).thenReturn(Optional.of(full10));
-        when(packageRepository.findById("ic-border-10")).thenReturn(Optional.of(border10));
+        when(productRepository.findById(1L)).thenReturn(Optional.of(ic));
+        when(variantRepository.findById(10L)).thenReturn(Optional.of(icFull));
+        when(variantRepository.findById(11L)).thenReturn(Optional.of(icBorder));
+        when(packageRepository.findById(100L)).thenReturn(Optional.of(full10));
+        when(packageRepository.findById(101L)).thenReturn(Optional.of(border10));
     }
 
     @Test
     void icFullTenCostsSixRinggit() {
-        var resolved = service.resolveActivePackage("ic", "ic-full", "ic-full-10");
+        var resolved = service.resolveActivePackage(1L, 10L, 100L);
         assertEquals(new BigDecimal("6.00"), resolved.pkg().getPrice());
         assertEquals(10, resolved.pkg().getQuantity());
+        assertEquals("ic", resolved.product().getCode());
         assertEquals(new BigDecimal("6.00"), resolved.totalPrice(1));
         assertEquals(new BigDecimal("12.00"), resolved.totalPrice(2));
     }
 
     @Test
     void icBorderTenCostsFiveRinggit() {
-        var resolved = service.resolveActivePackage("ic", "ic-border", "ic-border-10");
+        var resolved = service.resolveActivePackage(1L, 11L, 101L);
         assertEquals(new BigDecimal("5.00"), resolved.pkg().getPrice());
     }
 
     @Test
     void packageFromAnotherVariantIsRejected() {
         assertThrows(BadRequestException.class,
-                () -> service.resolveActivePackage("ic", "ic-border", "ic-full-10"));
+                () -> service.resolveActivePackage(1L, 11L, 100L));
     }
 
     @Test
     void packageFromAnotherSizeIsRejected() {
         assertThrows(BadRequestException.class,
-                () -> service.resolveActivePackage("polaroid-mini", "ic-full", "ic-full-10"));
+                () -> service.resolveActivePackage(2L, 10L, 100L));
     }
 
     @Test
     void inactivePackageIsRejected() {
         full10.setIsActive(false);
         assertThrows(BadRequestException.class,
-                () -> service.resolveActivePackage("ic", "ic-full", "ic-full-10"));
+                () -> service.resolveActivePackage(1L, 10L, 100L));
     }
 
     @Test
     void inactiveVariantIsRejected() {
         icFull.setIsActive(false);
         assertThrows(BadRequestException.class,
-                () -> service.resolveActivePackage("ic", "ic-full", "ic-full-10"));
+                () -> service.resolveActivePackage(1L, 10L, 100L));
     }
 
     @Test
     void inactiveProductIsRejected() {
         ic.setIsActive(false);
         assertThrows(BadRequestException.class,
-                () -> service.resolveActivePackage("ic", "ic-full", "ic-full-10"));
+                () -> service.resolveActivePackage(1L, 10L, 100L));
     }
 
     @Test
@@ -135,6 +140,31 @@ class CatalogPricingServiceTest {
     }
 
     @Test
+    void legacySizeOrderStillGuardsAgainstPrintSizePriceChange() {
+        PrintSize legacy = PrintSize.builder().id("4r").displayName("4R")
+                .price(new BigDecimal("1.00")).isActive(true).build();
+        when(printSizeRepository.findById("4r")).thenReturn(Optional.of(legacy));
+
+        OrderItem item = OrderItem.builder()
+                .sizeId("4r")
+                .quantity(10)
+                .unitPrice(new BigDecimal("1.00"))
+                .totalPrice(new BigDecimal("10.00"))
+                .build();
+        Order order = Order.builder()
+                .customerName("Test")
+                .customerEmail("test@example.com")
+                .subtotal(new BigDecimal("10.00"))
+                .shipping(new BigDecimal("7.00"))
+                .total(new BigDecimal("17.00"))
+                .paymentStatus(PaymentStatus.PENDING)
+                .build();
+        order.setItems(List.of(item));
+
+        service.assertOrderPricingCurrent(order);
+    }
+
+    @Test
     void resyncUpdatesSnapshotFromCatalog() {
         Order order = orderWith(full10, new BigDecimal("4.00"), new BigDecimal("4.00"));
         order.getItems().get(0).setPackageCount(2);
@@ -152,8 +182,8 @@ class CatalogPricingServiceTest {
     private Order orderWith(ProductPackage pkg, BigDecimal snapshotPackagePrice, BigDecimal snapshotTotal) {
         OrderItem item = OrderItem.builder()
                 .sizeId("ic")
-                .variantId(pkg.getVariantId())
-                .packageId(pkg.getId())
+                .variantId(String.valueOf(pkg.getVariantId()))
+                .packageId(String.valueOf(pkg.getId()))
                 .packageCount(1)
                 .packageQuantity(pkg.getQuantity())
                 .packagePrice(snapshotPackagePrice)

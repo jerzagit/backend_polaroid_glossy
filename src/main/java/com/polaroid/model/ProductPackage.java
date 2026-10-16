@@ -7,6 +7,10 @@ import lombok.experimental.SuperBuilder;
 
 import java.math.BigDecimal;
 
+/**
+ * A purchasable package for one style variant: a quantity of prints and the
+ * total price of the whole package in MYR (never per-print, never a float).
+ */
 @Entity
 @Table(name = "product_packages")
 @Data
@@ -15,12 +19,12 @@ import java.math.BigDecimal;
 @Builder
 public class ProductPackage extends Auditable {
 
-    /** Stable identity ({variantId}-{quantity}); never rewritten on price edits. */
     @Id
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(name = "variant_id", nullable = false)
-    private String variantId;
+    private Long variantId;
 
     @Column(nullable = false)
     private Integer quantity;
