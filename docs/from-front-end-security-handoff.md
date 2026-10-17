@@ -1,74 +1,144 @@
 # File Upload Security Audit — Backend Handoff
 
+> **Status: updated 2026-10-18.** This supersedes the audit as written on 2026-06-27.
+> The backend has since implemented most of what this document asked for, and storage has
+> moved from Supabase to Cloudflare R2, so the original "current state" and gap list no
+> longer describe the code. Original findings are kept and labelled **Historical**;
+> each one now has a resolution status. Open items remain — see [Remaining Open Items](#remaining-open-items).
+
+Audience: the backend team (closing the loop on the frontend's upload audit) and the
+frontend team (who depend on these upload rules). Verified against `FileService`,
+`FileController`, `SecurityConfig`, `storage/R2StorageService` and `application-prod.yml`.
+
 ## Current State
 
-**Frontend (this PR):** Added client-side MIME type, extension, and size validation before compression/upload. Only JPG, PNG, WEBP, and HEIC are accepted. Max 25MB per file.
+**Frontend (unchanged):** client-side MIME type, extension, and size validation before
+compression/upload. Only JPG, PNG, WEBP, and HEIC are accepted. Max 25MB per file.
 
-**Backend (`FileService.validateImage()`):** Validates Content-Type header (`image/jpeg` or `image/png`) and file size (max 10MB). No magic bytes or content-level validation.
+**Backend (`FileService.validateAndProcessImage`):** server-side validation no longer
+trusts the request. In order it enforces:
 
-## Security Gaps on Backend
+```text
+file present and non-empty
+size <= 25 MB                        (MAX_FILE_SIZE)
+magic bytes in {jpeg, png, webp}     (detectImageFormat, ALLOWED_FORMATS)
+ImageIO can decode it
+decoded size <= 100 MB               (width * height * 4, MAX_DECODED_MEMORY)
+width and height <= 10000 px         (MAX_IMAGE_DIMENSION)
+```
 
-### 1. Content-Type is Spoofable (Critical)
+Accepted images are then **re-encoded** to JPEG or PNG (quality 0.95, alpha preserved as
+PNG), so what lands in storage is not the uploaded byte stream.
 
-`FileService.java:229-231` relies entirely on `MultipartFile.getContentType()` which is set from the HTTP `Content-Type` header. An attacker can send a `.exe` or `.html` file with `Content-Type: image/jpeg` and it will pass validation.
+**Historical:** the original audit said the backend only checked the `Content-Type`
+header and capped files at 10MB via a method called `validateImage()`. That method no
+longer exists and nothing in the upload path reads `MultipartFile.getContentType()` for
+accept/reject decisions.
 
-**Fix:** Validate file signature (magic bytes) instead of (or in addition to) the Content-Type header.
+## Endpoint Context (why these checks carry the weight)
 
-Magic bytes for allowed formats:
-- JPEG: `FF D8 FF` (starts with bytes `0xFF 0xD8 0xFF`)
-- PNG: `89 50 4E 47` (starts with `‰PNG`)
-- WEBP: `52 49 46 46` (starts with `RIFF`) + `57 45 42 50` (at offset 8, `WEBP`)
+`POST /api/files/upload` is `permitAll` — anonymous callers can reach it. The gate is
+application-level, not authentication-level:
 
-### 2. No Image Dimension Validation
+- guest: `orderId` + `customerEmail` matching the order + a valid `uploadToken`
+  (SHA-256 hash compared with `MessageDigest.isEqual`, expiry default 168h, cleared once
+  the order's uploads are complete);
+- logged-in: JWT plus order ownership (or staff role);
+- anonymous rate limit: 10 uploads per 10 minutes per client IP + order;
+- per-item capacity and order state (`PENDING`/`PROCESSING`, not failed/cancelled/refunded)
+  are enforced before the bytes are touched.
 
-There is no check that the uploaded file has reasonable image dimensions. An attacker could upload a valid JPEG header with compressed garbage data (e.g., a "decompression bomb" or "pixel flood" attack).
+So the correct framing is: **upload is public but token-gated**, and the validation above
+is the only thing standing between an anonymous caller and storage.
 
-**Fix:** After magic bytes validation, use `ImageIO.read()` or similar to verify the image can actually be decoded and has sane dimensions (e.g., max 10000x10000 pixels).
+## Finding Status
 
-### 3. No File Extension Whitelist
+### 1. Content-Type is spoofable — **FIXED**
 
-Stored file paths at `orders/{orderId}/original/{uuid}.jpg` always use `.jpg`. This is safe since the extension is server-generated, but there is no validation that the original filename doesn't contain path traversal characters (`../`, null bytes, etc.).
+**Historical finding:** `FileService.java:229-231` relied on `MultipartFile.getContentType()`;
+a `.exe` or `.html` sent as `image/jpeg` passed.
 
-**Fix:** Strip/reject any path traversal patterns from the original filename, or (better) don't use user-supplied filenames at all.
+Current: the request `Content-Type` is ignored for validation. The format is detected from
+magic bytes (`FF D8 FF` JPEG, `89 50 4E 47` PNG, `RIFF`+`WEBP` WebP) and anything else is
+rejected with 400 (`magic bytes mismatch`). The image is re-encoded afterwards, which also
+removes trailing polyglot payloads.
 
-### 4. No Virus/Malware Scanning
+### 2. No image dimension validation — **FIXED**
 
-Supabase Storage does not provide built-in virus scanning. Uploaded files are stored as-is. A malicious file that passes the above checks could still contain:
-- Stolen credential data embedded in image pixels (steganography)
-- Malware in image metadata (EXIF payloads)
-- ZIP bombs disguised as valid images
+Current: `ImageIO.read` must succeed, decoded size is capped at 100MB
+(`width*height*4`), and each side is capped at 10000px. Decode failures return 400.
 
-**Fix:** Integrate a virus scanning service (e.g., ClamAV, AWS GuardDuty) or use Supabase Edge Functions with a scanning hook. At minimum, re-encode images server-side using a trusted library to strip all metadata and ensure valid encoding.
+### 3. No filename sanitization — **FIXED (by construction)**
 
-### 5. SVG / Scriptable Upload Vector (Medium)
+Current: storage keys are entirely server-generated —
+`orders/{orderNumber}/{orderItemId}/{uuid}.jpg` (or `upload-{photoId}.jpg`). The client's
+filename never reaches the key. `originalFilename`, when stored for strip assets, has
+control characters stripped and is truncated to 255 chars, and `photoId` must match
+`[a-zA-Z0-9-]{1,64}`.
 
-The backend currently only allows `image/jpeg` and `image/png`, so SVG XSS (CVE-style stored XSS via SVG) is not a direct risk. However, if the Content-Type spoofing gap (#1) is exploited, an attacker could upload an `.html` or `.svg` file with a spoofed Content-Type and then access it via signed URL, potentially executing scripts in the admin dashboard context.
+### 4. No virus/malware scanning — **OPEN**
 
-**Fix:** Magic bytes validation (#1) closes this vector. Also ensure storage bucket serves files with `Content-Disposition: attachment` for unknown types.
+Still no AV scanner. Nothing calls ClamAV/GuardDuty and there is no scanning hook.
 
-## Supabase Storage Security Notes
+Mitigations now in place, which reduce but do not close this: magic-byte allow-list
+(JPEG/PNG/WEBP only), full decode, and server-side re-encode (strips EXIF and appended
+metadata, so EXIF-payload and steganographic *delivery* vectors are largely removed).
 
-- **Bucket:** `polaroid-glossy` is set to private (no public access).
-- **Access:** Signed URLs with 3600s expiry are returned by the backend.
-- **RLS:** Verify that RLS policies on `storage.objects` table restrict access to:
-  - `INSERT` only for authenticated users (backend service role)
-  - `SELECT` only via signed URLs or authenticated requests
-  - No public/anonymous policies
-- **CORS:** Ensure CORS on the Supabase project only allows your frontend domain(s).
-- **Malware scanning:** Supabase does **not** have built-in malware scanning. This must be implemented at the application layer.
+**Recommended next step:** scan on upload (or asynchronously before an order reaches
+production status) and quarantine on detection. Until then, treat the bucket as
+untrusted content and keep it private (it is).
 
-## Summary
+### 5. SVG / scriptable upload vector — **FIXED**
 
-| Priority | Issue | Impact |
-|----------|-------|--------|
-| **Critical** | Content-Type spoofing (no magic bytes) | Any file type can be uploaded |
-| **High** | No image dimension validation | Decompression bombs |
-| **Medium** | No malware scanning | Persistent malicious payloads |
-| **Low** | No filename sanitization | Path traversal (mitigated by server-generated paths) |
+Current: the allow-list is JPEG/PNG/WEBP after decoding, so SVG and HTML cannot pass, and
+there is no path to serve attacker-chosen content types. Residual (low): objects are
+stored with `Content-Type: image/jpeg|png` and **no** `Content-Disposition: attachment`;
+because only raster image types can be stored, inline rendering is acceptable. If a new
+format is ever allowed, revisit this and add attachment disposition for unknown types.
 
-## Recommended Backend Changes
+## Storage Notes (Cloudflare R2, not Supabase)
 
-1. Add magic bytes validation in `FileService.validateImage()` using `ImageInputStream` or Apache Tika
-2. Add `ImageIO.read()` try-catch to verify image is decodable with sane dimensions
-3. Consider adding ClamAV or similar scanning via Supabase Edge Function
-4. Strip EXIF/metadata on upload by re-encoding the image server-side
+- **Provider:** `app.storage.provider=${STORAGE_PROVIDER:r2}` in `application-prod.yml`;
+  `R2StorageService` talks to R2 through the S3 API with a presigner (`path-style`
+  default true, region `auto`). Dev defaults to local filesystem; an S3 strategy exists.
+- **Bucket privacy:** the bucket must be private; the app never returns public object
+  URLs, only presigned GETs.
+- **URL expiry:** 300 seconds — `FileService.IMAGE_URL_EXPIRATION_SECONDS = 300`,
+  `OrderMapper.IMAGE_URL_EXPIRATION_SECONDS = 300`,
+  `R2StorageService.DEFAULT_SIGNED_URL_EXPIRATION_SECONDS = 300`.
+- **Credentials:** presigning needs `STORAGE_R2_ACCESS_KEY` / `STORAGE_R2_SECRET_KEY`;
+  without them `getSignedUrl` throws `R2 signed URL credentials are not configured`.
+- **Legacy / Historical:** the Supabase bucket `polaroid-glossy`, Supabase `storage.objects`
+  RLS guidance, and `SUPABASE_SIGNED_URL_EXPIRATION=3600` below no longer apply. The
+  `supabase.*` properties persist in `application.yml` / `application-uat.yml` but are
+  unused by storage code.
+- **CORS:** object CORS on R2 only needs to allow the frontend if the browser fetches
+  presigned URLs cross-origin; the backend CORS allow-list is `CORS_ORIGINS`
+  (comma-separated).
+
+**Historical** (kept for traceability — do not action): bucket `polaroid-glossy` private;
+signed URLs with 3600s expiry; RLS on `storage.objects` (INSERT only for authenticated
+backend, SELECT only via signed URLs, no public policies); Supabase project CORS limited
+to the frontend domain; Supabase has no built-in malware scanning.
+
+## Remaining Open Items
+
+| Priority | Item | Impact | Status |
+|---|---|---|---|
+| **High** | `GET /api/orders?userId=<uuid>` is public and returns that user's orders; `GET /api/reviews` exposes `userId` publicly | Order enumeration for any known customer UUID | **Open — backend fix required** |
+| **Medium** | No malware/AV scanning on upload | Persistent malicious payloads served from a private bucket | **Open** |
+| **Low** | Anonymous rate limiting is an in-process `ConcurrentHashMap` in `FileService` (10 per 10 min per IP+order) | Limit is per instance; horizontal scaling or restarts weaken it | **Open (known limitation)** |
+| **Low** | No `Content-Disposition: attachment` on stored objects | Inline rendering only; currently safe because only raster images can be stored | **Accepted** |
+
+The order-enumeration item is a separate track from this upload audit and is tracked in
+`docs/production-security-checklist.md` under "Outstanding Fix".
+
+## Original Recommendations — What Happened
+
+1. ~~Add magic bytes validation in `FileService.validateImage()`~~ — **done**, in
+   `validateAndProcessImage` (method renamed).
+2. ~~Add `ImageIO.read()` with sane dimensions~~ — **done** (10000px per side, 100MB
+   decoded cap).
+3. ~~Add ClamAV or similar scanning~~ — **not done** (see Open Items).
+4. ~~Strip EXIF/metadata by re-encoding~~ — **done** (all uploads re-encoded to
+   JPEG/PNG).

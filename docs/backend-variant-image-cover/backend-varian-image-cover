@@ -1,5 +1,7 @@
 # Backend request: expose variation cover images
 
+Status: current as of 2026-10-18 — implemented. `variants[].coverImageUrl` shipped in commit `6094140` (`V29__Add_variant_cover_image.sql`); the seller-dashboard picker in `8abf0a5`. See `implementation-plan.md` in this folder for the as-built contract.
+
 Expose each product variation's configured cover image in the public catalog responses:
 
 - `GET /api/products`
@@ -61,6 +63,13 @@ This example shows relevant fields only; preserve all existing response fields a
 
 Once deployed, the frontend must add this field to `ProductVariant` and preserve it in `normalizeVariants` in `src/lib/product-pricing.ts`. The selected variation's cover can then be displayed, falling back to the parent product image when null. Current catalog cards and the product gallery use parent product images.
 
+Status: the seller-dashboard half is done in this repo (`frontend/src/app/dashboard/catalog/page.tsx`,
+`catalogAPI.setVariantCover`, `ProductVariant.coverImageUrl` in `frontend/src/types/index.ts`).
+The storefront half lives in the storefront repo, not here, so it is not verifiable from this workspace.
+
 ## Observed baseline
 
 On 2026-10-18, the deployed backend at `https://polaroid-glossy-backend.fly.dev` returned only `id`, `style`, `label`, `active`, and `packages` for all 11 variants in `GET /api/products`. The IC detail response also omitted variation image fields.
+
+This section is the pre-implementation observation that motivated the request; it no longer describes
+the code on `main`, where every variant carries `coverImageUrl` (null when unset).

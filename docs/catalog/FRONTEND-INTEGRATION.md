@@ -1,5 +1,7 @@
 # Frontend integration — one product per size (Size → Style → Package)
 
+Status: current as of 2026-10-18 — verified against the catalog controllers/services and migrations V23–V29 on `main`.
+
 The catalog now models **one product per print size**. Each product has a
 database-generated numeric `id` plus a stable human `code` (e.g. `ic`, `2r`,
 `4r`). Inside a product you pick a **style** (`FULL` prints / `BORDER` adds the
@@ -18,8 +20,10 @@ Base URL: `https://polaroid-glossy-backend.fly.dev`
 | 50 pcs | RM30.00 | RM25.00 |
 | 100 pcs | RM55.00 | RM45.00 |
 
-`pricingTiers` is still returned for sizes that have not been migrated, so keep
-reading it as a fallback until you have migrated every size to packages.
+`pricingTiers` is still returned for backward compatibility (and the legacy
+`sizeId` checkout path still prices from the per-print `print_sizes.price`), but
+every size now has packages — price new checkouts from
+`variants[].packages[]` and ignore `pricingTiers`.
 
 ## 1. What changed
 
@@ -54,6 +58,7 @@ the `code` **or** a legacy slug):
       "style": "FULL",
       "label": "Full",
       "active": true,
+      "coverImageUrl": "https://polaroid-glossy-backend.fly.dev/images/products/tiktok/2r-full.webp",
       "packages": [
         { "id": 100, "quantity": 10, "price": "6.00", "currency": "MYR", "active": true }
       ]
@@ -63,6 +68,7 @@ the `code` **or** a legacy slug):
       "style": "BORDER",
       "label": "Border (Polaroid)",
       "active": true,
+      "coverImageUrl": null,
       "packages": [
         { "id": 101, "quantity": 10, "price": "5.00", "currency": "MYR", "active": true }
       ]
@@ -77,6 +83,10 @@ Notes:
 - `price` is the legacy per-print base price. **Do not price from it** — use
   `variants[].packages[].price`.
 - Package `price` is the **whole-package total** and is a decimal string (e.g. `"6.00"`).
+- `variants[].coverImageUrl` is the style's own cover: an absolute HTTPS URL from that
+  product's gallery, or `null` when it has none (fall back to the product-level `image`).
+  List and detail responses return the same value; aliases return the filtered style's cover.
+  This example shows the field inline in `variants[]` above.
 - Public endpoints only return `active` products, variants, and packages.
 - Only offer a style if `variant.active === true` **and** it has at least one
   package; otherwise the backend rejects checkout with `UNAVAILABLE`.
@@ -187,11 +197,15 @@ Reads: `ADMIN`, `MARKETING`. Writes: `ADMIN`. Path variables are numeric ids.
 - `PATCH /api/admin/catalog/products/{id}` — edit size/dimensions/basePrice/active
 - `POST /api/admin/catalog/products/{productId}/variants` — add style (`style`: `FULL`|`BORDER`, optional `label`, `sortOrder`, `isActive`)
 - `PATCH /api/admin/catalog/variants/{variantId}` — enable/disable style, rename, reorder
+- `PUT  /api/admin/catalog/variants/{variantId}/cover` — set or clear the style cover (`{"coverImageUrl": "https://…"}` / `{"coverImageUrl": null}`); the URL must already be in that product's gallery
 - `POST /api/admin/catalog/variants/{variantId}/packages` — add package (`quantity`, `price` as whole-package total, `sortOrder`, `isActive`)
 - `PATCH /api/admin/catalog/packages/{packageId}` — update `price`, `isActive`, `sortOrder` (quantity is immutable)
+- `POST`/`PUT /api/admin/catalog/products/{id}/images`, `GET /api/products/{id}/images/{name}` — product gallery, see [PRODUCT-IMAGES.md](./PRODUCT-IMAGES.md)
 
 Validation: positive quantities, positive prices, at most one variant per style
-per product, no duplicate quantity within a variant. Disabling never deletes
+per product, no duplicate quantity within a variant. A style cover must be an
+absolute HTTPS URL already in the product's gallery; removing that gallery image
+clears the style cover in the same transaction. Disabling never deletes
 historical order references; duplicate per-style sizes are **soft-retired**
 (inactive), never deleted. Who changed a price and when is recorded automatically
 (`created_by` / `updated_by` / timestamps).

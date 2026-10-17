@@ -1,5 +1,7 @@
 # Implementation plan: variation cover images (as built)
 
+Status: current as of 2026-10-18 — implemented on `main` (V29 + `PUT /api/admin/catalog/variants/{variantId}/cover`).
+
 Companion to `backend-varian-image-cover` in this folder. Scope chosen: a style's cover is a
 pointer to one of the product's existing gallery images — no per-variant uploads in this
 release.
@@ -53,7 +55,7 @@ URL the public endpoint now 404s.
 | Admin logic + validation | `src/main/java/com/polaroid/service/CatalogAdminService.java` — `setVariantCover` |
 | Gallery + orphan guard | `src/main/java/com/polaroid/service/ProductImageService.java` |
 | Request DTO | `src/main/java/com/polaroid/dto/request/admin/CatalogVariantCoverRequest.java` |
-| Tests | `src/test/java/com/polaroid/service/VariantCoverImageTest.java`, `CatalogSchemaMappingTest` |
+| Tests | `src/test/java/com/polaroid/service/VariantCoverImageTest.java`, `ProductCatalogMappingTest` |
 
 `variantsFor` feeds both list and detail responses, so the two cannot drift; aliases already
 route through the same builder with a style filter.

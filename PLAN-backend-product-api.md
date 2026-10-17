@@ -1,5 +1,11 @@
 # Backend Product API — Requirements for Frontend Parity
 
+> **Status (2026-10-18): implemented and merged.** `GET /api/products` and
+> `GET /api/products/{id}` serve the current catalog shape described in
+> [`docs/API.md`](docs/API.md#catalog-public) and
+> [`docs/catalog/FRONTEND-INTEGRATION.md`](docs/catalog/FRONTEND-INTEGRATION.md). This file
+> is kept as the historical requirements document; it is not a to-do list.
+>
 > **Date:** 2026-10-12
 > **Source:** Audit of polaroid_glossy frontend codebase
 > **Purpose:** Define what the Spring Boot backend must implement so the existing Next.js frontend can consume product data without changes.

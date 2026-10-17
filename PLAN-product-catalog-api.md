@@ -1,5 +1,12 @@
 # Product Catalog API — Implementation Plan
 
+> **Status (2026-10-18): implemented and merged.** The catalog now lives in the
+> products/variants/packages schema (migrations V23–V29) rather than the `ProductMeta` +
+> pricing-tier model described below. Current contract:
+> [`docs/API.md`](docs/API.md#catalog-public) and
+> [`docs/catalog/FRONTEND-INTEGRATION.md`](docs/catalog/FRONTEND-INTEGRATION.md). This file
+> is historical.
+>
 > **Branch:** `feat/product-catalog-api`
 > **Goal:** Add the missing ProductMeta model, pricing tiers, and merged `/api/products` endpoints that the Next.js frontend expects.
 

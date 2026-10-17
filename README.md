@@ -1,1325 +1,222 @@
 # Polaroid Glossy Backend
 
-REST API backend for e-commerce platform specializing in polaroid photo printing.
+REST API and admin console for Polaroid Glossy, a Malaysian photo-print shop. It serves
+the customer storefront and seller dashboard, takes ToyyibPay payments, stores customer
+photos in Cloudflare R2, and tracks each order from draft to delivery.
 
-## Table of Contents
-- [Technology Stack](#technology-stack)
-- [Project Structure](#project-structure)
-- [Getting Started](#getting-started)
-- [Configuration](#configuration)
-- [API Endpoints](#api-endpoints)
-- [Database Schema](#database-schema)
-- [Security](#security)
-- [Payment Integration](#payment-integration)
-- [File Storage](#file-storage)
+- API reference: [`docs/API.md`](docs/API.md)
+- Architecture: [`backend_architecture.md`](backend_architecture.md)
+- Local setup: [`QUICKSTART.md`](QUICKSTART.md)
+- Deploying: [`docs/fly-backend-deployment.md`](docs/fly-backend-deployment.md)
 
----
+## Stack
 
-## Technology Stack
+| Component | Technology |
+|---|---|
+| Framework | Spring Boot 3.4.1 (Java 17) |
+| Build | Maven 3.9.6 (`mvn`; the checked-in `mvnw.cmd` is currently broken on Windows) |
+| Database | PostgreSQL (Supabase-hosted in production, Postgres 17), Flyway 30 migrations |
+| ORM | Spring Data JPA / Hibernate (`validate` in prod, `update` in dev) |
+| Security | Spring Security, JWT access + refresh tokens (jjwt 0.12.5), form-login admin UI |
+| Admin UI | Thymeleaf templates under `/admin` |
+| Storage | Cloudflare R2 via AWS SDK S3 2.25.0; local filesystem in dev; S3 strategy available |
+| Payments | ToyyibPay (bill creation + signed webhook callbacks) and bank transfer with proof upload |
+| Images | ImageIO + TwelveMonkeys WebP reader (25 MB, JPEG/PNG/WebP, 10 000 px ceiling) |
+| Docs | springdoc-openapi 2.5.0 (`/swagger-ui/index.html`, `/v3/api-docs`) |
+| Tests | JUnit 5 + Spring Boot Test on H2 in PostgreSQL mode (62 tests, 12 classes) |
 
-| Component | Technology | Version |
-|-----------|------------|---------|
-| Framework | Spring Boot | 3.4.x |
-| Language | Java | 21 (LTS) |
-| Build Tool | Maven | 3.9.x |
-| Database | PostgreSQL | 15+ (Supabase) |
-| ORM | Spring Data JPA | - |
-| Security | Spring Security + JWT | - |
-| File Storage | Supabase Storage (R2-compatible) | - |
-| Payment | ToyyibPay | API v1 |
-| Scheduling | Spring @Scheduled | Draft expiry cleanup every 10 min |
-| Migration | Flyway | 12 migrations applied |
+## What the backend owns
 
----
+- **Catalog** — products, per-style variants (`FULL`, `BORDER`) and per-size packages with
+  quantity pricing tiers. The legacy `print_sizes` table still backs old orders and the
+  admin size settings page.
+- **Checkout** — guest drafts with an upload token, authenticated checkout, idempotent
+  order creation, price-change detection and reconfirmation, strip-photo design payloads.
+- **Uploads** — customer photos, strip assets, payment proofs; signed URLs for reads.
+- **Payments** — ToyyibPay bill creation, verified webhooks, manual payment verification,
+  bank-transfer proof review, hourly expiry and reminder jobs.
+- **Fulfilment** — status history, tracking numbers, seller notes, strip design exports
+  (per item, per design, per slot).
+- **Admin** — server-rendered console (`/admin`) plus a JSON admin API (`/api/admin/**`)
+  for orders, users, stats, catalog and system info.
+- **Marketing** — testimonials, reviews, TikTok video metadata.
 
-## Project Structure
-
-```
-polaroid-backend/
-├── src/main/
-│   ├── java/com/polaroid/
-│   │   ├── PolaroidApplication.java
-│   │   ├── config/
-│   │   │   ├── CorsConfig.java
-│   │   │   ├── SecurityConfig.java
-│   │   │   ├── SupabaseConfig.java
-│   │   │   └── RestTemplateConfig.java
-│   │   ├── controller/
-│   │   │   ├── AuthController.java
-│   │   │   ├── OrderController.java
-│   │   │   ├── AdminController.java
-│   │   │   ├── FileController.java
-│   │   │   ├── WebhookController.java
-│   │   │   └── SystemController.java
-│   │   ├── service/
-│   │   │   ├── AuthService.java
-│   │   │   ├── OrderService.java
-│   │   │   ├── PaymentService.java
-│   │   │   ├── FileService.java
-│   │   │   ├── StatsService.java
-│   │   │   ├── SystemService.java
-│   │   │   └── UserService.java
-│   │   ├── repository/
-│   │   ├── model/
-│   │   ├── dto/
-│   │   ├── security/
-│   │   └── exception/
-│   └── resources/
-│       ├── application.yml
-│       ├── db/migration/
-│       └── templates/
-└── pom.xml
-```
-
----
-
-## Getting Started
-
-### Prerequisites
-- Java 17+
-- Maven 3.9+
-- Docker (for PostgreSQL)
-- Node.js 18+ (for frontend)
-
-### Quick Start
-
-#### 1. Start PostgreSQL (Using Docker)
-```bash
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=polaroid --name polaroid-postgres postgres:15
-```
-
-If another local project already uses port `5432`, the project run script starts `polaroid-postgres-dev` on port `5433` instead.
-
-#### 2. Configure Environment
-Edit `.env.dev` file with your database credentials:
-```bash
-# Database (Local PostgreSQL)
-DATABASE_URL=jdbc:postgresql://localhost:5432/polaroid
-DB_USERNAME=postgres
-DB_PASSWORD=password
-
-# JWT
-JWT_SECRET=dev-secret-key-minimum-32-characters-long-for-development
-```
-
-#### 3. Run Backend
-```bash
-# Uses Java 17 for this project only and starts the dev profile
-./scripts/run-backend-dev.sh
-```
-
-The API will be available at `http://localhost:8080`
-
-#### 4. Create Admin User
-Call the setup API to create an admin:
-```
-POST http://localhost:8080/api/auth/setup-admin?secret=admin-secret-2024
-
-Body:
-{
-  "email": "admin@polaroid.com",
-  "password": "admin123",
-  "name": "Admin User",
-  "phone": "+60123456789"
-}
-```
-
-#### 5. Login
-```
-POST http://localhost:8080/api/auth/login
-
-Body:
-{
-  "email": "admin@polaroid.com",
-  "password": "admin123"
-}
-```
-
-### Running with Docker
+## Quick start
 
 ```bash
-# Start PostgreSQL
-docker run -d -p 5432:5432 -e POSTGRES_PASSWORD=password -e POSTGRES_DB=polaroid --name polaroid-postgres postgres:15
-
-# Run backend
-mvn spring-boot:run
+# Postgres on 5432/5433, database "polaroid"
+mvn spring-boot:run            # dev profile, port 8080, mock storage + mock payments
+curl http://localhost:8080/api/health
 ```
 
-### Alternative: H2 Database (Testing Only)
-If you don't want to use Docker/PostgreSQL, you can use H2 in-memory database:
-
-Edit `application-dev.yml`:
-```yaml
-datasource:
-  url: jdbc:h2:mem:polaroiddb
-  driver-class-name: org.h2.Driver
-  username: sa
-  password: 
-
-flyway:
-  enabled: false
-```
-
-Note: H2 data is lost on restart.
-
----
+Details, environment variables and test commands are in [`QUICKSTART.md`](QUICKSTART.md).
+The dev profile writes uploads to `.dev-storage/` and enables
+`POST /api/orders/{orderNumber}/mock-pay`, so checkout can be exercised without a
+gateway. `SeedDataConfig` seeds the legacy print sizes, testimonials and sample reviews on
+startup when those tables are empty.
 
 ## Configuration
 
-### application.yml
-
-```yaml
-server:
-  port: 8080
-
-spring:
-  datasource:
-    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/polaroid}
-    username: ${DB_USERNAME:postgres}
-    password: ${DB_PASSWORD:password}
-  jpa:
-    hibernate:
-      ddl-auto: update
-
-jwt:
-  secret: ${JWT_SECRET:your-256-bit-secret-key-minimum-32-characters-long}
-  expiration: 86400000
-  refresh-expiration: 604800000
-
-supabase:
-  url: ${SUPABASE_URL:https://your-project.supabase.co}
-  key: ${SUPABASE_KEY:your-anon-key}
-  storage-bucket: polaroid-glossy
-
-toyyibpay:
-  secret-key: ${TOYYIBPAY_SECRET_KEY:your-secret-key}
-  category-code: ${TOYYIBPAY_CATEGORY_CODE:your-category}
-  return-url: ${TOYYIBPAY_RETURN_URL:http://localhost:3000/payment-status}
-  callback-url: ${TOYYIBPAY_CALLBACK_URL:http://localhost:8080/api/webhooks/toyyibpay}
-  fee-percentage: 2.5
-
-cors:
-  allowed-origins: ${CORS_ORIGINS:http://localhost:3000}
-```
-
----
-
-## Authentication
-
-All protected endpoints require `Authorization: Bearer <jwt>` header. Obtain JWT via `POST /api/auth/login`, `/api/auth/register`, or `/api/auth/google`.
-
-## API Reference
-
-### Authentication (`/api/auth`)
-
-#### `POST /api/auth/register`
-Register a new customer account.
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "email": "user@example.com",
-  "password": "password123",
-  "name": "John Doe",
-  "phone": "+60123456789",
-  "affiliateCode": "REF123"
-}
-```
-
-**Response (200):**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
-  "email": "user@example.com",
-  "name": "John Doe",
-  "role": "CUSTOMER",
-  "expiresIn": 86400000
-}
-```
-
----
-
-#### `POST /api/auth/login`
-Login with email and password.
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "email": "user@example.com",
-  "password": "password123"
-}
-```
-
-**Response (200):**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
-  "email": "user@example.com",
-  "name": "John Doe",
-  "role": "CUSTOMER",
-  "expiresIn": 86400000
-}
-```
-
----
-
-#### `POST /api/auth/google`
-Login or register via Google OAuth. Call this after frontend Google sign-in.
-
-**Auth:** None
-
-**Request:**
-```json
-{
-  "email": "user@gmail.com",
-  "name": "John Doe",
-  "avatarUrl": "https://lh3.googleusercontent.com/..."
-}
-```
-
-**Response (200):**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
-  "email": "user@gmail.com",
-  "name": "John Doe",
-  "role": "CUSTOMER",
-  "expiresIn": 86400000
-}
-```
-
----
-
-#### `POST /api/auth/refresh`
-Refresh an expired JWT.
-
-**Auth:** None (uses refresh token as body)
-
-**Request:**
-```
-eyJhbGciOiJIUzI1NiJ9...
-```
-
-**Response (200):**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9...",
-  "refreshToken": "eyJhbGciOiJIUzI1NiJ9...",
-  "email": "user@example.com",
-  "name": "John Doe",
-  "role": "CUSTOMER",
-  "expiresIn": 86400000
-}
-```
-
----
-
-#### `GET /api/auth/me`
-Get current authenticated user's profile.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "id": "uuid",
-  "email": "user@example.com",
-  "name": "John Doe",
-  "phone": "+60123456789",
-  "avatarUrl": "https://...",
-  "role": "CUSTOMER",
-  "affiliateCode": "REF123",
-  "isActive": true,
-  "createdAt": "2026-07-05T10:00:00"
-}
-```
-
----
-
-#### `GET /api/auth/profile`
-Get extended profile with counts.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "user": {
-    "id": "uuid",
-    "email": "user@example.com",
-    "name": "John Doe",
-    "role": "CUSTOMER"
-  },
-  "orderCount": 5,
-  "draftCount": 2,
-  "addressCount": 3
-}
-```
-
----
-
-#### `POST /api/auth/setup-admin?secret=admin-secret-2024`
-Create admin account (only when enabled in config).
-
-**Auth:** None (protected by secret query param)
-
-**Request:**
-```json
-{
-  "email": "admin@polaroid.com",
-  "password": "admin123",
-  "name": "Admin User",
-  "phone": "+60123456789"
-}
-```
-
-**Response (200):**
-```json
-{
-  "token": "eyJhbGciOiJIUzI1NiJ9...",
-  "email": "admin@polaroid.com",
-  "name": "Admin User",
-  "role": "ADMIN"
-}
-```
-
----
-
-### Orders (`/api/orders`)
-
-#### `POST /api/orders`
-Create a new order. Guest users (no auth) get `DRAFT` status with 24h `expiresAt`. Authenticated users get `PENDING` status.
-
-**Auth:** Optional (guest creates DRAFT, authenticated creates PENDING)
-
-**Request:**
-```json
-{
-  "customerName": "John Doe",
-  "customerEmail": "john@example.com",
-  "customerPhone": "+60123456789",
-  "customerHouseUnitNo": "12-3",
-  "customerAddressLine1": "Jalan Ampang",
-  "customerAddressLine2": "Kuala Lumpur",
-  "customerPostcode": "50450",
-  "customerCity": "Kuala Lumpur",
-  "customerState": "Kuala Lumpur",
-  "customerCountry": "Malaysia",
-  "affiliateCode": "REF123",
-  "notes": "Handle with care",
-  "items": [
-    {
-      "sizeId": "4R",
-      "quantity": 2,
-      "imageUrls": ["https://...", "https://..."],
-      "customTexts": ["Happy Birthday!", ""]
-    }
-  ]
-}
-```
-
-**Response (200) - Guest (DRAFT):**
-```json
-{
-  "success": true,
-  "order": {
-    "id": "uuid",
-    "orderNumber": "PG12345678A01",
-    "status": "DRAFT",
-    "paymentStatus": "PENDING",
-    "subtotal": 10.00,
-    "shipping": 5.00,
-    "total": 15.00,
-    "expiresAt": "2026-07-06T10:00:00",
-    "draftExpiredAt": null,
-    "items": [
-      {
-        "sizeId": "4R",
-        "sizeName": "4R",
-        "quantity": 2,
-        "unitPrice": 5.00,
-        "totalPrice": 10.00
-      }
-    ],
-    "createdAt": "2026-07-05T10:00:00"
-  }
-}
-```
-
-**Response (200) - Authenticated (PENDING):**
-```json
-{
-  "success": true,
-  "order": {
-    "id": "uuid",
-    "orderNumber": "PG12345678A01",
-    "status": "PENDING",
-    "paymentStatus": "PENDING",
-    "subtotal": 10.00,
-    "shipping": 5.00,
-    "total": 15.00,
-    "expiresAt": null,
-    "items": [...],
-    "createdAt": "2026-07-05T10:00:00"
-  }
-}
-```
-
----
-
-#### `GET /api/orders?orderNumber=PG12345678A01`
-Get order by order number. Accessible by order owner (auth) or via email param.
-
-**Auth:** Optional (adds owner verification if provided)
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "orders": [
-    {
-      "id": "uuid",
-      "orderNumber": "PG12345678A01",
-      "status": "PENDING",
-      "paymentStatus": "PAID",
-      "subtotal": 10.00,
-      "total": 15.00,
-      "items": [...],
-      "statusHistory": [
-        { "status": "DRAFT", "message": "Order created", "createdAt": "..." },
-        { "status": "PENDING", "message": "Payment completed", "createdAt": "..." }
-      ],
-      "createdAt": "2026-07-05T10:00:00"
-    }
-  ]
-}
-```
-
----
-
-#### `GET /api/orders/{orderNumber}?email=customer@example.com`
-Get single order by number. Email param allows guest access.
-
-**Auth:** Optional
-
-**Response (200):**
-```json
-{
-  "id": "uuid",
-  "orderNumber": "PG12345678A01",
-  "status": "PENDING",
-  "paymentStatus": "PAID",
-  "items": [...],
-  "createdAt": "2026-07-05T10:00:00"
-}
-```
-
----
-
-#### `GET /api/orders/my?page=0&size=20&sortBy=createdAt&sortDir=desc&status=DRAFT`
-Get paginated orders for the authenticated user. Filter by status optionally.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "orders": [
-    {
-      "id": "uuid",
-      "orderNumber": "PG12345678A01",
-      "status": "DRAFT",
-      "expiresAt": "2026-07-06T10:00:00",
-      "total": 15.00,
-      "items": [...],
-      "createdAt": "2026-07-05T10:00:00"
-    }
-  ],
-  "totalPages": 1,
-  "totalElements": 3,
-  "page": 0,
-  "size": 20
-}
-```
-
----
-
-#### `PUT /api/orders`
-Update an existing order (e.g., shipping address, items). Requires auth.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Request:**
-```json
-{
-  "orderNumber": "PG12345678A01",
-  "customerName": "John Updated",
-  "customerPhone": "+60198765432",
-  "items": [...]
-}
-```
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "order": { "...": "..." }
-}
-```
-
----
-
-#### `DELETE /api/orders?orderId=uuid`
-Cancel an order by ID. Requires auth.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "message": "Order cancelled",
-  "order": { "...": "..." }
-}
-```
-
----
-
-#### `POST /api/orders/{orderNumber}/pay`
-Initiate ToyyibPay payment for an order. Transitions DRAFT→PENDING on completion via webhook.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "paymentUrl": "https://toyyibpay.com/BILLCODE123"
-}
-```
-
----
-
-#### `POST /api/orders/{orderNumber}/mock-pay`
-Mock payment for development (only when `app.mock-payments.enabled=true`).
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Request (optional):**
-```json
-{
-  "status": "PAID"
-}
-```
-
-**Response (200):**
-```json
-{
-  "id": "uuid",
-  "status": "PENDING",
-  "paymentStatus": "PAID",
-  "...": "..."
-}
-```
-
----
-
-#### `GET /api/orders/payment-return?order_id=xyz`
-Handle ToyyibPay return redirect after payment.
-
-**Auth:** None
-
-**Response (200):**
-```json
-{
-  "status": "1",
-  "billcode": "BILL123",
-  "order_id": "PG12345678A01",
-  "message": "Payment successful"
-}
-```
-
----
-
-### Addresses (`/api/addresses`)
-
-All address endpoints require authentication. Max 10 addresses per user. First address created is auto-set as default.
-
-#### `GET /api/addresses`
-List all saved addresses for the authenticated user (default first, then by creation date).
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "addresses": [
-    {
-      "id": "uuid",
-      "label": "Home",
-      "name": "John Doe",
-      "phone": "+60123456789",
-      "houseUnitNo": "12-3",
-      "addressLine1": "Jalan Ampang",
-      "addressLine2": "",
-      "city": "Kuala Lumpur",
-      "state": "Kuala Lumpur",
-      "postalCode": "50450",
-      "country": "Malaysia",
-      "isDefault": true,
-      "createdAt": "2026-07-05T10:00:00"
-    }
-  ]
-}
-```
-
----
-
-#### `POST /api/addresses`
-Create a new address. If it's the first address, it becomes default automatically.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Request:**
-```json
-{
-  "label": "Home",
-  "name": "John Doe",
-  "phone": "+60123456789",
-  "houseUnitNo": "12-3",
-  "addressLine1": "Jalan Ampang",
-  "addressLine2": "Kuala Lumpur",
-  "city": "Kuala Lumpur",
-  "state": "Kuala Lumpur",
-  "postalCode": "50450",
-  "country": "Malaysia",
-  "isDefault": true
-}
-```
-
-**Response (201):**
-```json
-{
-  "success": true,
-  "address": {
-    "id": "uuid",
-    "label": "Home",
-    "name": "John Doe",
-    "isDefault": true,
-    "createdAt": "2026-07-05T10:00:00"
-  }
-}
-```
-
----
-
-#### `PUT /api/addresses/{id}`
-Update an existing address. Only the owner can update.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Request:** Same body as POST.
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "address": { "...": "..." }
-}
-```
-
----
-
-#### `DELETE /api/addresses/{id}`
-Delete an address. Only the owner can delete. Cannot delete if it's the last address (keeps at least 1).
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "message": "Address deleted"
-}
-```
-
----
-
-#### `PATCH /api/addresses/{id}/default`
-Set an address as the default. All other addresses for this user get `isDefault: false`.
-
-**Auth:** `Authorization: Bearer <jwt>`
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "address": {
-    "id": "uuid",
-    "isDefault": true,
-    "...": "..."
-  }
-}
-```
-
----
-
-### Print Sizes (`/api/print-sizes`)
-
-#### `GET /api/print-sizes`
-Get all active print sizes (prices come from DB, not hardcoded).
-
-**Auth:** None
-
-**Response (200):**
-```json
-[
-  {
-    "id": "2R",
-    "name": "2R",
-    "displayName": "2R (2.5 x 3.5 inches)",
-    "width": 2.5,
-    "height": 3.5,
-    "price": 3.00,
-    "description": "Wallet size - Perfect for keepsakes",
-    "isActive": true
-  },
-  {
-    "id": "3R",
-    "name": "3R",
-    "displayName": "3R (3.5 x 5 inches)",
-    "width": 3.5,
-    "height": 5.0,
-    "price": 4.00,
-    "description": "Standard photo size - Great for albums",
-    "isActive": true
-  },
-  {
-    "id": "4R",
-    "name": "4R",
-    "displayName": "4R (4 x 6 inches)",
-    "width": 4.0,
-    "height": 6.0,
-    "price": 5.00,
-    "description": "Most popular - Classic polaroid style",
-    "isActive": true
-  },
-  {
-    "id": "A4",
-    "name": "A4",
-    "displayName": "A4 (8.3 x 11.7 inches)",
-    "width": 8.3,
-    "height": 11.7,
-    "price": 15.00,
-    "description": "Poster size - Perfect for displays",
-    "isActive": true
-  }
-]
-```
-
----
-
-### File Upload (`/api/files`)
-
-#### `POST /api/files/upload`
-Upload an image to an order. Authenticated users can always upload. Guest uploads require a valid order in `DRAFT` status (uploads blocked if `EXPIRED` or already `PENDING`).
-
-**Auth:** Optional (authenticated bypasses payment check; guests need valid DRAFT order)
-
-**Request:** `multipart/form-data`
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| file | File | ✅ | Image file (JPEG, PNG, max 10MB) |
-| orderId | String | ✅ | Order UUID |
-| customerEmail | String | For guest | Required if no auth |
-| uploadToken | String | For guest | Upload token from order |
-| orderItemId | String | No | Link to specific item |
-
-**Response (200):**
-```json
-{
-  "success": true,
-  "url": "https://...",
-  "key": "original/{orderId}/{uuid}.jpg",
-  "signedUrl": "https://...?token=..."
-}
-```
-
----
-
-#### `DELETE /api/files?key=original/{orderId}/{uuid}.jpg`
-Delete a file by key. Staff only.
-
-**Auth:** `Authorization: Bearer <jwt>` (Packer+)
-
-**Response (204):** No content
-
----
-
-#### `GET /api/files/order/{orderId}`
-List files for an order. Admin only.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
-**Response (200):**
-```json
-[
-  { "key": "original/{orderId}/{uuid}.jpg", "url": "https://..." },
-  { "key": "original/{orderId}/{uuid2}.jpg", "url": "https://..." }
-]
-```
-
----
-
-#### `GET /api/files/order/{orderId}/download`
-Download all order images as ZIP.
-
-**Auth:** `Authorization: Bearer <jwt>` (Packer+)
-
-**Response (200):** `application/zip` binary
-
----
-
-### Admin (`/api/admin`)
-
-#### `GET /api/admin/stats/overview`
-Dashboard statistics with optional filters.
-
-**Auth:** `Authorization: Bearer <jwt>` (Marketing+). Marketing cannot see revenue.
-
-**Query Params:** `status`, `paymentStatus`, `customerState`, `fromDate`, `toDate`, `orderReference`, `customerEmail`, `customerPhone`
-
-**Response (200):**
-```json
-{
-  "totalOrders": 150,
-  "totalRevenue": 5000.00,
-  "totalOrdersPending": 12,
-  "totalOrdersPaid": 100,
-  "totalOrdersPosted": 20,
-  "totalOrdersDelivered": 15,
-  "totalOrdersCancelled": 3
-}
-```
-
----
-
-#### `GET /api/admin/stats/orders-by-status`
-Order count grouped by status.
-
-**Auth:** `Authorization: Bearer <jwt>` (Marketing+)
-
-**Response (200):**
-```json
-{
-  "PENDING": 12,
-  "PAID": 100,
-  "PROCESSING": 5,
-  "POSTED": 20,
-  "ON_DELIVERY": 3,
-  "DELIVERED": 7,
-  "CANCELLED": 3
-}
-```
-
----
-
-#### `GET /api/admin/stats/top-sizes`
-Best selling print sizes.
-
-**Auth:** `Authorization: Bearer <jwt>` (Marketing+)
-
-**Response (200):**
-```json
-[
-  ["4R", 500],
-  ["3R", 300],
-  ["A4", 100],
-  ["2R", 50]
-]
-```
-
----
-
-#### `GET /api/admin/stats/by-state`
-Orders grouped by customer state. Admin only.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
-**Response (200):**
-```json
-[
-  ["Selangor", 45],
-  ["Kuala Lumpur", 30],
-  ["Johor", 20]
-]
-```
-
----
-
-#### `GET /api/admin/orders`
-List all orders with filtering and pagination.
-
-**Auth:** `Authorization: Bearer <jwt>` (Packer+)
-
-**Query Params:** `status`, `paymentStatus`, `customerState`, `fromDate`, `toDate`, `orderReference`, `customerEmail`, `customerPhone`, `page`, `size`, `sortBy`, `sortDir`
-
-**Response (200):** Spring Data `Page<OrderResponse>`:
-```json
-{
-  "content": [ ...orders... ],
-  "totalPages": 5,
-  "totalElements": 100,
-  "pageable": { ... },
-  "number": 0,
-  "size": 20
-}
-```
-
----
-
-#### `GET /api/admin/orders/{id}`
-Get single order by ID.
-
-**Auth:** `Authorization: Bearer <jwt>` (Packer+)
-
----
-
-#### `PATCH /api/admin/orders/{id}/status`
-Update order status.
-
-**Auth:** `Authorization: Bearer <jwt>` (Marketing+; Packer restricted to POSTED/DELIVERED)
-
-**Request:**
-```json
-{
-  "status": "PROCESSING",
-  "message": "Packing in progress"
-}
-```
-
----
-
-#### `PATCH /api/admin/orders/{id}/tracking?trackingNumber=POS123456`
-Add tracking number.
-
-**Auth:** `Authorization: Bearer <jwt>` (Packer+)
-
----
-
-#### `PATCH /api/admin/orders/{id}/payment-status`
-Update payment status manually (admin).
-
-**Auth:** `Authorization: Bearer <jwt>` (Marketing+)
-
-**Request:**
-```json
-{
-  "paymentStatus": "PAID"
-}
-```
-
----
-
-#### `POST /api/admin/orders/{id}/notes?notes=Urgent+order`
-Add internal notes.
-
-**Auth:** `Authorization: Bearer <jwt>` (Packer+)
-
----
-
-#### `GET /api/admin/users`
-List all users.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
-**Query Params:** `role`, `search`, `page`, `size`
-
----
-
-#### `GET /api/admin/users/{id}`
-Get user by ID.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
----
-
-#### `PATCH /api/admin/users/{id}/role`
-Update user role.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
-**Request:**
-```json
-{
-  "role": "PACKER"
-}
-```
-
----
-
-#### `GET /api/admin/settings/print-sizes`
-List all print sizes (active + inactive).
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
----
-
-#### `POST /api/admin/settings/print-sizes`
-Create new print size.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
----
-
-#### `PATCH /api/admin/settings/print-sizes/{id}`
-Update print size.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
----
-
-#### `DELETE /api/admin/settings/print-sizes/{id}`
-Delete print size.
-
-**Auth:** `Authorization: Bearer <jwt>` (Admin)
-
----
-
-### Webhooks (`/api/webhooks`)
-
-#### `POST /api/webhooks/toyyibpay`
-ToyyibPay payment callback. Called by ToyyibPay after customer completes payment. Transitions DRAFT→PENDING if status is PAID.
-
-**Auth:** Verified by ToyyibPay hash
-
-**Query Params:** `refno`, `order_id`, `billcode`, `status`, `amount`, `hash`
-
-**Response (200):**
-```json
-{
-  "status": "paid",
-  "message": "Payment callback processed"
-}
-```
-
----
-
-## Order Status Lifecycle
-
-```
-Guest Order:   DRAFT ──(pay via webhook)──→ PENDING ──→ PROCESSING ──→ POSTED ──→ ON_DELIVERY ──→ DELIVERED
-                                              ↑               │
-                                           (24h expires)    CANCELLED / REFUNDED
-                                              ↓
-                                          EXPIRED (cron cleanup every 10 min)
-
-Auth Order:    PENDING ──(pay)──→ PENDING ──→ ...
-                ↑                  ↑
-           (direct)        (same as above)
-```
-
-- **DRAFT**: Guest orders start here. Images can be uploaded. Expires in 24h.
-- **EXPIRED**: Set by `DraftCleanupService` cron job (every 10 min). Uploads blocked.
-- **PENDING**: Awaiting payment. Authenticated orders start here. DRAFT transitions here on payment.
-- **PROCESSING / POSTED / ON_DELIVERY / DELIVERED / CANCELLED / REFUNDED**: Normal fulfillment flow.
-
----
-
-## User Roles & Permissions
-
-| Feature | Customer | Affiliate | Packer | Marketing | Admin |
-|---------|:--------:|:---------:|:------:|:---------:|:-----:|
-| **Orders** | | | | | |
-| Place Order | ✅ | ✅ | ✅ | ✅ | ✅ |
-| View Own Orders | ✅ | Own | ❌ | ✅ | ✅ |
-| View All Orders | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Create DRAFT (Guest) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Order Management** | | | | | |
-| Update Status | ❌ | ❌ | 🚫P/D | ✅ | ✅ |
-| Add Tracking | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Payment Status | ❌ | ❌ | ❌ | ✅ | ✅ |
-| Add Notes | ❌ | ❌ | ✅ | ✅ | ✅ |
-| **Addresses** | | | | | |
-| CRUD Addresses | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Set Default | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Files** | | | | | |
-| Upload (Own Order) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Upload (DRAFT) | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Download ZIP | ❌ | ❌ | ✅ | ✅ | ✅ |
-| Delete Files | ❌ | ❌ | ❌ | ✅ | ✅ |
-| **Admin** | | | | | |
-| Stats Overview | ❌ | ❌ | ❌ | 🚫NoRev | ✅ |
-| System Info | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Manage Users | ❌ | ❌ | ❌ | ❌ | ✅ |
-| Print Sizes | ❌ | ❌ | ❌ | ❌ | ✅ |
-
-*🚫P/D = Posted/Delivered only  
-🚫NoRev = Can see order counts but not revenue*
-
----
-
-## Database Schema
-
-### Tables
-
-1. **users** - User accounts with roles (CUSTOMER, AFFILIATE, PACKER, MARKETING, ADMIN)
-2. **orders** - Order records with `status` (DRAFT, PENDING, PROCESSING, POSTED, ON_DELIVERY, DELIVERED, CANCELLED, REFUNDED, EXPIRED), `payment_status`, `expires_at`, `draft_expired_at`
-3. **order_items** - Individual items in each order (size, qty, price, images)
-4. **order_status_history** - Audit trail of status changes
-5. **addresses** - Saved user addresses (max 10/user, single `is_default` flag)
-6. **print_sizes** - Available photo print sizes (reference data, prices from DB)
-7. **reviews** - Product reviews
-8. **testimonials** - Site testimonials
-
-### Materialized Views
-
-- `mv_daily_sales` - Daily sales summary
-- `mv_orders_by_status` - Orders grouped by status
-- `mv_top_sizes` - Best selling print sizes
-
----
-
-## Flyway Migrations
-
-| Version | Description |
-|---------|-------------|
-| V1 | Initial schema (users, orders, order_items, order_status_history, print_sizes, reviews, testimonials, materialized views) |
-| V2 | Seed data (default print sizes) |
-| V3 | Add order delivery address columns |
-| V4 | Add customer_city column |
-| V5 | Add print_size tag + testimonials/reviews |
-| V6 | Fix reviews/testimonials ID type |
-| V7 | Add order upload token |
-| V8 | Add DRAFT/EXPIRY columns (expires_at, draft_expired_at) + addresses table |
-| V9 | Add audit columns (created_by, updated_by) to addresses |
-| V10 | Update orders status check constraint (add DRAFT, EXPIRED) |
-| V11 | Update order_status_history status check constraint |
-
----
+Profiles live in `src/main/resources`: `application.yml` (shared, activates `dev`),
+`application-dev.yml`, `application-uat.yml`, `application-prod.yml`. Fly sets
+`SPRING_PROFILES_ACTIVE=prod`.
+
+| Concern | dev | prod |
+|---|---|---|
+| Database | `jdbc:postgresql://localhost:5433/polaroid`, Flyway disabled, `ddl-auto: update` | `DATABASE_URL`, Flyway on (`baseline-on-migrate`, baseline v2), `ddl-auto: validate` |
+| Storage | local `.dev-storage` | R2 (`STORAGE_PROVIDER=r2`) |
+| Payments | mock payments on | ToyyibPay, callback verification on |
+| Mail | MailHog-style SMTP on `localhost:1025` | `SPRING_MAIL_*` |
+| Setup admin | enabled with a dev secret | disabled (`SETUP_ADMIN_ENABLED=false`) |
+| CORS | localhost ports 3000-3004 | `CORS_ORIGINS` (comma separated) |
+
+Environment variables consumed by the app (see `.env.example`):
+`DATABASE_URL`, `DB_USERNAME`, `DB_PASSWORD`, `JWT_SECRET`, `SERVER_PORT`,
+`SPRING_MAIL_HOST/PORT/USERNAME/PASSWORD`, `PUBLIC_API_URL`, `FRONTEND_URL`,
+`STORAGE_PROVIDER`, `STORAGE_R2_ACCOUNT_ID`, `STORAGE_R2_API_TOKEN`, `STORAGE_R2_BUCKET`,
+`STORAGE_R2_S3_ENDPOINT`, `STORAGE_R2_REGION`, `STORAGE_R2_ACCESS_KEY`,
+`STORAGE_R2_SECRET_KEY`, `STORAGE_R2_PATH_STYLE`, `SETUP_ADMIN_ENABLED`,
+`SETUP_ADMIN_SECRET`, `PAYMENT_EXPIRATION_HOURS`, `PAYMENT_REMINDER_HOURS`,
+`TOYYIBPAY_SECRET_KEY`, `TOYYIBPAY_CATEGORY_CODE`, `TOYYIBPAY_RETURN_URL`,
+`TOYYIBPAY_CALLBACK_URL`, `TOYYIBPAY_VERIFY_CALLBACK`, `CORS_ORIGINS`.
+
+`SUPABASE_URL`, `SUPABASE_KEY` and `SUPABASE_SIGNED_URL_EXPIRATION` still appear in the
+config and `fly.toml` for the retired Supabase Storage integration. Storage now goes
+through `app.storage.provider` (`local`, `r2`, `s3`); treat the Supabase keys as legacy.
+
+## API in one screen
+
+Full reference with request bodies, error shapes and flow examples: [`docs/API.md`](docs/API.md).
+
+| Area | Endpoints |
+|---|---|
+| Catalog (public) | `GET /api/products`, `GET /api/products/{id}`, `GET /api/products/{id}/images/{name}` |
+| Auth | `POST /api/auth/{register,login,google,refresh,setup-admin}`, `GET /api/auth/{me,profile}` |
+| Orders | `POST /api/orders`, `GET /api/orders`, `GET /api/orders/{orderNumber}`, `GET /api/orders/my`, `PUT /api/orders`, `DELETE /api/orders`, `POST /api/orders/{orderNumber}/{pay,confirm-price,mock-pay}` |
+| Addresses | `GET/POST /api/addresses`, `PUT/DELETE /api/addresses/{id}`, `PATCH /api/addresses/{id}/default` |
+| Uploads | `POST /api/files/upload`, `POST /api/files/payment-proof`, `DELETE /api/files`, `GET /api/files/order/{orderId}`, `GET /api/files/order/{orderId}/download`, strip export paths |
+| Payments | `POST /api/toyyibpay/create-bill`, `POST /api/webhooks/toyyibpay` |
+| Marketing | `GET /api/reviews`, `POST /api/reviews`, `GET /api/testimonials`, `GET /api/print-sizes` |
+| Admin API | `/api/admin/**` — orders, stats, users, print sizes, catalog, system |
+| Admin UI | `/admin`, `/admin/orders`, `/admin/orders/{id}`, `/admin/users`, `/admin/stats`, `/admin/settings` |
+
+The service publishes its own schema at `/v3/api-docs`, so Swagger UI is the tie-breaker
+when a field or status code is in doubt.
+
+## Data model
+
+Tables created by Flyway (`src/main/resources/db/migration`, V1-V29):
+
+| Table | Purpose |
+|---|---|
+| `users` | Accounts and roles (`CUSTOMER`, `AFFILIATE`, `PACKER`, `MARKETING`, `ADMIN`) |
+| `addresses` | Saved customer addresses, one default per user |
+| `products`, `product_variants`, `product_packages`, `product_meta`, `product_aliases` | Catalog: product → style variant → size package (pricing tiers), marketing metadata, legacy URL aliases |
+| `print_sizes`, `print_size_pricing_tiers` | Legacy size catalogue still used by older orders and admin size settings |
+| `orders`, `order_items`, `order_status_history` | Order header, line snapshots (variant, package, price, strip design state) and audit trail |
+| `strip_checkout_requests` | Idempotency records for strip-design checkouts |
+| `reviews`, `testimonials` | Marketing content |
+
+Money columns are `numeric(10,2)`. Order items snapshot the catalog selection at checkout,
+so later price edits never rewrite history.
+
+## Flows
+
+**Guest checkout.** `POST /api/orders` with `Idempotency-Key` → `DRAFT` order, `expiresAt`
+(default 24 h) and a one-time `uploadToken` (hashed at rest, default 168 h). The customer
+uploads photos with that token, pays through ToyyibPay (`POST /api/orders/{n}/pay`), and
+the webhook moves the order to `PENDING`. `DraftCleanupService` expires unpaid drafts every
+10 minutes.
+
+**Authenticated checkout.** Same endpoint with a JWT → `PENDING`, no upload token. If the
+server total no longer matches what the customer saw, the call returns `409 PRICE_CHANGED`
+with `currentTotal`; the client calls `POST /api/orders/{n}/confirm-price` and retries.
+
+**Bank transfer.** `paymentMethod: bank_transfer` accepts a proof image through
+`POST /api/files/payment-proof`; staff verify it with
+`POST /api/admin/orders/{orderNumber}/verify-payment`.
+
+**Strip designs.** Strip products reserve assets during checkout (schema in
+`POST /api/orders` → `stripDesign`), uploads go through the same `/api/files/upload` with
+an `assetId`, and sellers export finished sheets or individual slots through
+`/api/files/order/{orderId}/items/{itemId}/...`.
 
 ## Security
 
-### JWT Authentication
-- Access token: 24 hours expiration
-- Refresh token: 7 days expiration
-- Password hashing: BCrypt
-- Google OAuth users are auto-created via `POST /api/auth/google`
+- JWT bearer tokens, 24 h access / 7 day refresh; role checks by URL rule in
+  `config/SecurityConfig.java` plus `@PreAuthorize` on handlers.
+- Public: catalog reads, auth entry points, order creation and single-segment order
+  lookup (email-verified), uploads (token-gated for guests), webhooks, health, Swagger.
+- `/api/admin/system/**` is `ADMIN`; the rest of `/api/admin/**` allows
+  `ADMIN`/`MARKETING`/`PACKER`; user and print-size management is `ADMIN` only.
+- Uploads are validated by magic bytes, size, pixel count and decoded memory, and
+  anonymous uploads are rate limited (10 per 10 minutes per IP/order).
+- Known gaps (documented in [`docs/API.md`](docs/API.md#known-authorization-gaps)):
+  `GET /api/orders?userId=` is public, `GET /api/reviews` exposes reviewer UUIDs,
+  `POST /api/reviews` trusts a body-supplied author, and Swagger is public in prod.
 
-### Endpoint Security
-- Public: `/api/auth/login`, `/api/auth/register`, `/api/auth/google`, `/api/auth/setup-admin`, `/api/webhooks/**`, `/api/print-sizes`, `/swagger-ui/**`, `/v3/api-docs/**`
-- Authenticated: `/api/auth/me`, `/api/auth/profile`, `/api/addresses/**`, `/api/orders/my`, `/api/files/upload`
-- Staff (Packer+): `/api/admin/orders/**`, `/api/files/**`
-- Marketing+: `/api/admin/stats/**` (no revenue for Marketing)
-- Admin: `/api/admin/users/**`, `/api/admin/settings/**`, `/api/admin/system/**`
+## Testing
 
----
-
-## Payment Integration
-
-### ToyyibPay Flow
-
-1. Customer creates order → `POST /api/orders` (DRAFT for guests, PENDING for logged-in)
-2. Customer uploads images → `POST /api/files/upload` (allowed for DRAFT)
-3. Customer initiates payment → `POST /api/orders/{orderNumber}/pay`
-4. Frontend redirects to ToyyibPay checkout URL
-5. Customer pays on ToyyibPay
-6. ToyyibPay calls webhook → `POST /api/webhooks/toyyibpay`
-7. Backend verifies hash, updates status → DRAFT→PENDING (clears expiresAt), payment_status→PAID
-8. Frontend polls `GET /api/orders/{orderNumber}` to detect status change
-
-### Guest Draft → Paid Flow
-- Guest creates order → `DRAFT` with 24h `expiresAt`
-- Guest uploads photos (allowed while DRAFT)
-- Guest pays → webhook transitions to `PENDING`, clears `expiresAt`
-- If 24h passes without payment → `DRAFT` → `EXPIRED` (cron every 10 min), images orphaned
-
-### Payment Status
-- `PENDING` - Awaiting payment
-- `PAID` - Payment successful
-- `FAILED` - Payment failed
-
----
-
-## File Storage
-
-### Supabase Storage Structure
-
-```
-polaroid-glossy/
-└── original/
-    └── {orderId}/
-        └── {uuid}.jpg
-```
-
-### Upload Rules
-- Authenticated user: can always upload to their own orders
-- Guest user: can only upload to orders in `DRAFT` status
-- Uploads blocked if order is `EXPIRED` or status beyond `DRAFT` (for guests)
-
-### Supported Operations
-- Upload images per order
-- List order images (Admin)
-- Download all order images as ZIP (Packer+)
-- Delete individual images (Marketing+)
-
----
-
-## Scheduled Jobs
-
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| `DraftCleanupService.cleanupExpiredDrafts()` | Every 10 min | Marks DRAFT orders past `expires_at` as EXPIRED |
-
----
-
-## Deployment
-
-### Production (Fly.io)
-- App: `polaroid-glossy-backend`
-- Region: `sin` (Singapore)
-- VM: 512MB shared CPU
-- URL: `https://polaroid-glossy-backend.fly.dev`
-
-### Deploy
-```bash
-flyctl deploy --app polaroid-glossy-backend
-```
-
-### Logs
-```bash
-flyctl logs --app polaroid-glossy-backend --no-tail
-```
-
----
-
-## Development
-
-### Run Tests
 ```bash
 mvn test
 ```
 
-### Build
+12 test classes / 62 tests cover file authorization and fulfillment, catalog mapping,
+pricing tiers, image covers, product images, order fulfillment and login error handling.
+They run against in-memory H2 in PostgreSQL mode, so no database is needed.
+
+## Deployment
+
+Production runs on Fly.io: app `polaroid-glossy-backend`, region `sin`, two
+`shared-cpu-1x` machines with 512 MB, health check `GET /api/health`.
+
 ```bash
-mvn clean package
+scripts/deploy-prod.sh --check   # preflight: credentials, branch, unpushed commits
+scripts/deploy-prod.sh           # flyctl deploy --remote-only, then polls /api/health
 ```
 
-### Run JAR
-```bash
-java -jar target/polaroid-backend-1.0.0.jar
-```
+GitHub Actions runs `ci.yml` on every push and PR to `main`, and `fly-deploy.yml` deploys
+only after CI succeeds for the same commit (`workflow_run`). See
+[`docs/production-workflow.md`](docs/production-workflow.md).
 
----
+## Documentation index
+
+| Document | Contents |
+|---|---|
+| [`docs/API.md`](docs/API.md) | Full endpoint reference, auth, errors, flow examples |
+| [`backend_architecture.md`](backend_architecture.md) | Module map, data model, security, flows |
+| [`QUICKSTART.md`](QUICKSTART.md) | Local setup and first run |
+| [`docs/fly-backend-deployment.md`](docs/fly-backend-deployment.md) | Fly app, secrets, deploy and smoke checks |
+| [`docs/production-workflow.md`](docs/production-workflow.md) | Branch, release and post-deploy process |
+| [`docs/production-security-checklist.md`](docs/production-security-checklist.md) | Pre-deploy security checklist |
+| [`docs/frontend-security-handoff.md`](docs/frontend-security-handoff.md) | Frontend-facing API/auth changes |
+| [`docs/from-front-end-security-handoff.md`](docs/from-front-end-security-handoff.md) | Earlier handoff note, kept for history |
+| [`docs/catalog/FRONTEND-INTEGRATION.md`](docs/catalog/FRONTEND-INTEGRATION.md) | Catalog API guide for the storefront |
+| [`docs/catalog/PRODUCT-IMAGES.md`](docs/catalog/PRODUCT-IMAGES.md) | Product image and cover-image rules |
+| [`docs/backend-variant-image-cover/implementation-plan.md`](docs/backend-variant-image-cover/implementation-plan.md) | Per-style cover image design notes |
+| [`docs/strip-docmentation/strip-design-fulfillment-handoff.md`](docs/strip-docmentation/strip-design-fulfillment-handoff.md) | Strip design upload and export contract |
+| [`PLAN-backend-product-api.md`](PLAN-backend-product-api.md), [`PLAN-product-catalog-api.md`](PLAN-product-catalog-api.md) | Historical implementation plans |
+
+## Repository layout
+
+```
+src/main/java/com/polaroid/
+  config/       security, CORS, JPA auditing, exception handler, seed data
+  controller/   17 REST controllers + Thymeleaf admin pages
+  dto/          request/response records and mappers
+  exception/    domain exceptions mapped by GlobalExceptionHandler
+  model/        JPA entities + enums
+  repository/   Spring Data repositories
+  security/     JWT filter and user details wiring
+  service/      22 services (orders, catalog, payments, files, strip, email, stats)
+  storage/      StorageService with local / R2 / S3 strategies
+src/main/resources/
+  db/migration/ 30 Flyway SQL migrations (V1..V29)
+  templates/    Thymeleaf admin pages and email templates
+frontend/       Next.js storefront/dashboard, deployed separately (Vercel)
+scripts/        deploy-prod.sh, run-backend-dev.sh
+docs/           API, deployment, catalog and security documentation
+```
 
 ## License
 

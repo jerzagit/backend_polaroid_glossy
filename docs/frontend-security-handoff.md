@@ -1,28 +1,31 @@
 # Frontend Handoff: Backend Production Security Controls
 
-This document summarizes the backend security changes that the frontend project must account for.
+> **Status: updated 2026-10-18.** This supersedes the version written 2026-06-27. The
+> backend has moved on since then (guest uploads with tokens, Cloudflare R2 storage,
+> 5-minute signed URLs), so several instructions below reverse that version. Every claim
+> here was re-verified against the backend source. Items describing the old design are
+> labelled **Historical**; the previously wrong "upload requires JWT" claim is corrected
+> in [Auth Requirements](#auth-requirements).
 
-Backend branch:
+Audience: the frontend team. This document lists what the frontend must do to work with
+the current backend security model.
+
+## Version Reference
+
+**Historical** (the branch/commit this handoff originally described — it does not reflect
+the current API surface, kept for traceability):
 
 ```text
 feat/production-security-hardening
-```
-
-Backend commit:
-
-```text
 9d69f20 feat: harden production security controls
 ```
 
-Frontend project currently discussed:
-
-```text
-/Users/jerza/personal/polaroid_glossy_backup/
-```
+For current behaviour read the backend source, not that branch: `SecurityConfig`,
+`FileController`, `FileService`, `OrderController`, `OrderService`.
 
 ## API Base URL
 
-The frontend should call the Spring Boot backend directly.
+The frontend calls the Spring Boot backend directly.
 
 Local:
 
@@ -36,30 +39,52 @@ Production on Vercel:
 NEXT_PUBLIC_BACKEND_API_BASE=https://your-fly-app.fly.dev/api
 ```
 
-## Auth Headers
+## Auth Requirements
 
-The following backend endpoints now require backend JWT authentication:
+**Correction:** `POST /api/files/upload` is **not** JWT-only. It is `permitAll` in
+`SecurityConfig` and guests upload with an upload token (see
+[Image Upload Flow](#image-upload-flow)). `POST /api/orders` is also public — it creates a
+guest draft. The old table in this document claimed all four endpoints require JWT; it is
+**Historical** and reproduced here only so nobody re-applies it:
 
-```http
-POST /api/orders
-POST /api/orders/{orderNumber}/pay
-POST /api/files/upload
-GET /api/files/order/{orderId}
+```text
+Historical (incorrect):
+POST /api/orders                   -> requires JWT
+POST /api/orders/{orderNumber}/pay -> requires JWT
+POST /api/files/upload             -> requires JWT
+GET /api/files/order/{orderId}     -> requires JWT
 ```
 
-Frontend requests must include:
+Current behaviour:
+
+| Endpoint | Auth |
+|---|---|
+| `POST /api/orders` | Public (guest draft). Send JWT if the user is logged in so the order is attached to their account. |
+| `POST /api/files/upload` | Public for guests **only** with `orderId` + `customerEmail` + valid `uploadToken`; logged-in users are authorized by JWT and must own the order or be staff. |
+| `POST /api/files/payment-proof` | Requires JWT. |
+| `POST /api/orders/{orderNumber}/pay` | Requires JWT. |
+| `GET /api/orders/my` | Requires JWT. |
+| `GET /api/orders/{orderNumber}` | Public with `?email=` matching the order's customer, or owner JWT, or staff JWT. |
+| `GET /api/files/order/{orderId}` | **ADMIN only** — the customer-facing frontend must not call it. |
+| `GET /api/files/order/{orderId}/download` and strip export routes | ADMIN / MARKETING / PACKER only. |
+| `DELETE /api/files` | ADMIN / MARKETING / PACKER only. |
+
+Authenticated calls send:
 
 ```http
-Authorization: Bearer <backend-jwt>
+Authorization: Bearer ***
 ```
 
-The existing frontend `backendRequest()` helper should attach this header for authenticated backend calls.
+The existing `backendRequest()` helper should attach this header for authenticated
+backend calls. Do not attach it to guest uploads — those are authorized by the upload
+token, not by a session.
 
 ## Image Upload Flow
 
-Image upload is no longer public.
+Upload is no longer the old fire-and-forget public upload, but it is **not** JWT-only
+either. It is order-scoped and token-gated for guests.
 
-Old flow:
+**Historical** (this flow no longer works):
 
 ```text
 Upload photos first using random checkoutId
@@ -67,101 +92,137 @@ Create order after upload
 Store uploaded public URLs
 ```
 
-This no longer works.
-
-New backend expectation:
+Current backend expectation:
 
 ```text
 Order must already exist
-Upload must be authenticated
-Upload orderId must be a real backend order id or order number
-Only order owner or staff can upload/list files
+Guest uploads need orderId + customerEmail + uploadToken
+Logged-in uploads are authorized by JWT + order ownership
+Every upload targets an existing order item
+Upload capacity per item is enforced (extra uploads are rejected, not silently accepted)
 ```
 
-Backend storage path:
+### Guest flow
 
-```text
-orders/{orderId}/original/{uuid}.jpg
-```
+1. `POST /api/orders` (no JWT) → `{ success, order }`. The guest order response includes
+   `uploadToken`. It is shown **once**: the backend stores only its SHA-256 hash plus an
+   expiry (default 168 hours), and clears both automatically once every order item has
+   its expected number of images.
+2. For each photo, `POST /api/files/upload` as multipart with `file`, `orderId`,
+   `customerEmail`, `uploadToken`, `orderItemId` (required when the order has more than
+   one item), and optionally `photoId` for idempotent re-uploads.
+3. A missing, wrong, or expired token returns **403**; a full item returns **409**
+   (`UploadConflict`). Handle them as distinct states — do not retry a 403.
 
-Upload response:
+Anonymous uploads are rate-limited to **10 per 10 minutes per client IP + order**; past
+that the backend returns **400** ("Too many upload attempts"). Surface it as
+"try again shortly", not as a validation error. Files above 25 MB may be refused earlier
+by the multipart limit as **413** rather than 400, so treat both as "file too large".
+
+### Logged-in flow
+
+Same call without `uploadToken`, with `Authorization: Bearer ***`. If `customerEmail` is
+sent it must still match the order or the call 403s.
+
+### Upload response
 
 ```json
 {
-  "key": "orders/{orderId}/original/{uuid}.jpg",
-  "url": "temporary-signed-url",
-  "fileName": "uuid.jpg"
+  "success": true,
+  "url": "presigned-url-expiring-in-300s",
+  "fileName": "uuid.jpg",
+  "orderItemId": "…",
+  "uploadedImageCount": 2,
+  "expectedImageCount": 3,
+  "remainingImageCount": 1
 }
 ```
 
 Important:
 
 ```text
-Store key, not url.
+Keys are attached server-side. Do not send keys back to the backend.
+There is no key field in the response any more.
 ```
 
-`url` is temporary because Supabase Storage is now expected to be private.
+**Historical:** the previous handoff said "store key, not url" and showed a `key` field in
+the upload response. That field is no longer returned, and POSTing image keys back with
+order items is obsolete — the backend appends keys to the order item itself.
 
-Recommended integration decision:
+`url` is temporary because the bucket is private (see below).
+
+## Object Storage: Cloudflare R2
+
+Production stores uploads in **Cloudflare R2 through its S3-compatible API**
+(`STORAGE_PROVIDER=r2` in `application-prod.yml`). Dev uses the local filesystem; an AWS
+S3 strategy also exists.
+
+**Historical:** Supabase Storage bucket `polaroid-glossy` and
+`SUPABASE_SIGNED_URL_EXPIRATION=3600` are legacy. Supabase is not part of the upload path
+any more; the frontend needs no Supabase configuration or keys.
+
+Key layout:
 
 ```text
-Create backend order first, then upload photos, then attach returned keys to order items.
+orders/{orderNumber}/{orderItemId}/{uuid}.jpg
+payment-proofs/{orderNumber}/{uuid}.jpg
 ```
 
-The current backend stores `imageUrls` into `OrderItem.s3Keys`, but the safest final flow may need a backend endpoint to attach image keys after order creation.
+(Not `orders/{orderId}/original/{uuid}.jpg` — that path is **Historical**.)
 
-## Supabase Storage
+### Signed URL lifetime: 300 seconds
 
-The Supabase bucket should be private:
+Every URL the backend mints comes from `FileService` / `OrderMapper` with a 300-second
+expiry. Frontend consequences:
 
-```text
-polaroid-glossy
-```
-
-The backend now returns signed URLs instead of public object URLs.
-
-Signed URL expiry is configured by backend env:
-
-```bash
-SUPABASE_SIGNED_URL_EXPIRATION=3600
-```
-
-Frontend should not assume image URLs are permanent.
+- Do not persist image URLs in a database, `localStorage`, or SSR HTML that outlives a
+  page view. Store nothing, or store your own reference and re-read the order.
+- After ~5 minutes a stale URL fails at R2 (not with a friendly backend error), so
+  refresh URLs by re-reading the order before print/checkout screens.
+- Long-lived gallery screens should refresh on focus or on an interval.
+- Render immediately from the upload response `url`; re-fetch for anything later.
 
 ## Public Order Lookup / Tracking
 
-Unauthenticated order tracking now requires email verification.
-
-Old call:
-
-```http
-GET /api/orders/{orderNumber}
-```
-
-New unauthenticated call:
+Unauthenticated tracking requires email verification (unchanged from the original
+handoff):
 
 ```http
 GET /api/orders/{orderNumber}?email=customer@example.com
 ```
 
-If the user is authenticated and owns the order, the email query is not required.
+The backend returns the order only if the email matches `customerEmail`, or the caller's
+JWT owns the order, or the caller is staff. Otherwise **403**.
 
-Frontend tracking UI should ask for:
+Tracking UI should ask for:
 
 ```text
 Order number
 Customer email
 ```
 
+## Do Not Use `GET /api/orders?userId=<uuid>`
+
+`GET /api/orders?userId=…` is public and unchecked on the backend today, and
+`GET /api/reviews` publicly exposes customer `userId` values. Using it from the frontend
+would spread a known vulnerability:
+
+- Use `GET /api/orders/my` (JWT) for the signed-in customer's order list.
+- Use `GET /api/orders/{orderNumber}?email=…` for guest tracking.
+- Never read a `userId` out of a review payload and feed it to this endpoint.
+
+The backend fix (removing the `userId` branch, or authorizing it) is outstanding; this
+document will be updated when it lands.
+
 ## ToyyibPay
 
-ToyyibPay bill creation should go through the Spring backend:
+Bill creation goes through the Spring backend:
 
 ```http
 POST /api/orders/{orderNumber}/pay
 ```
 
-The backend returns:
+Requires JWT. The backend returns:
 
 ```json
 {
@@ -171,39 +232,35 @@ The backend returns:
 }
 ```
 
-ToyyibPay callback URL should point to Fly backend:
+ToyyibPay callback URL points to the Fly backend:
 
 ```text
 https://your-fly-app.fly.dev/api/webhooks/toyyibpay
 ```
 
-ToyyibPay return URL should point to Vercel frontend:
+ToyyibPay return URL points to the Vercel frontend:
 
 ```text
 https://your-vercel-domain/payment-status
 ```
 
-Legacy frontend routes should not be used for payment processing:
+Do not route payment processing through the legacy frontend routes:
 
 ```text
 src/app/api/toyyibpay/create-bill/route.ts
 src/app/api/toyyibpay/callback/route.ts
 ```
 
-The backend now verifies ToyyibPay callback data before marking an order paid:
-
-```text
-order reference
-bill code
-amount
-callback hash
-```
+The webhook is public but verified server-side in `PaymentService.verifyCallback` (order
+reference, bill code, amount in cents, and callback hash must all match;
+`TOYYIBPAY_VERIFY_CALLBACK=true` in prod). A rejected callback returns **403**. The
+frontend must not trust return-URL query parameters for payment state — read the order.
 
 ## Setup Admin
 
-The setup admin endpoint is disabled by default outside local dev.
-
-Production default:
+`/api/auth/setup-admin` is `permitAll` in the security config but returns **404** unless
+`SETUP_ADMIN_ENABLED=true`; with the flag on, a wrong `secret` returns **401**. Production
+default:
 
 ```bash
 SETUP_ADMIN_ENABLED=false
@@ -238,9 +295,14 @@ DATABASE_URL
 DB_USERNAME
 DB_PASSWORD
 JWT_SECRET
-SUPABASE_URL
-SUPABASE_KEY
-SUPABASE_SIGNED_URL_EXPIRATION
+STORAGE_PROVIDER=r2
+STORAGE_R2_ACCOUNT_ID
+STORAGE_R2_API_TOKEN
+STORAGE_R2_BUCKET
+STORAGE_R2_ACCESS_KEY
+STORAGE_R2_SECRET_KEY
+STORAGE_R2_REGION=auto
+STORAGE_R2_PATH_STYLE=true
 TOYYIBPAY_SECRET_KEY
 TOYYIBPAY_CATEGORY_CODE
 TOYYIBPAY_RETURN_URL
@@ -250,19 +312,38 @@ CORS_ORIGINS
 SETUP_ADMIN_ENABLED=false
 ```
 
+**Historical:** `SUPABASE_URL`, `SUPABASE_KEY`, `SUPABASE_SIGNED_URL_EXPIRATION` still
+exist as unused properties; do not add them to new environments.
+
 Do not expose backend-only secrets through `NEXT_PUBLIC_` variables.
 
-## Backend Production Checklist
+## Frontend Checklist
 
 Before going live:
 
 ```text
-Supabase bucket is private
+Guest checkout captures uploadToken from the create-order response
+Guest upload sends orderId + customerEmail + uploadToken
+Logged-in upload sends Authorization: Bearer ***
+Order is created first, then photos are uploaded per order item
+403 (bad/expired token) and 409 (item full) are handled as distinct states
+No image keys are sent back to the backend on order update
+No image URL is cached beyond 5 minutes; URLs refresh on demand
+Order tracking uses order number + email, never userId
+Order lists use /api/orders/my, never /api/orders?userId=
+Payment state is read from the order, not from return-URL query params
+CORS_ORIGINS on Fly lists only the production frontend domains
+```
+
+## Backend Production Checklist
+
+```text
+R2 bucket is private; raw object URLs do not resolve
+Presigned URL expiry is 300s (FileService / OrderMapper)
 CORS_ORIGINS only includes Vercel/custom production domains
-ToyyibPay callback points to Fly backend
-ToyyibPay return URL points to Vercel frontend
+ToyyibPay callback points to Fly backend; return URL points to Vercel
+TOYYIBPAY_VERIFY_CALLBACK=true
 SETUP_ADMIN_ENABLED=false
-Frontend sends backend JWT for protected calls
-Frontend tracking requires order number + email
-Frontend stores Supabase keys, not signed URLs
+Swagger (/swagger-ui/**, /v3/api-docs/**) is publicly reachable in prod by design — confirm that is acceptable
+GET /api/orders?userId=... is still public (known open gap, tracked separately)
 ```
