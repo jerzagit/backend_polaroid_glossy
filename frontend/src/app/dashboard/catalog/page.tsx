@@ -206,6 +206,13 @@ export default function CatalogPage() {
       applyProduct(response.data);
     });
 
+  const handleSetStyleCover = (variantId: number, coverImageUrl: string | null) =>
+    run(async () => {
+      const response = await catalogAPI.setVariantCover(variantId, coverImageUrl);
+      applyProduct(response.data);
+      setNotice(coverImageUrl ? 'Style cover updated.' : 'Style cover cleared.');
+    });
+
   const handleAddPackage = (variantId: number) =>
     run(async () => {
       const quantity = toNumberOrUndefined(newPackage.quantity);
@@ -516,6 +523,47 @@ export default function CatalogPage() {
                         </>
                       )}
                     </div>
+                  </div>
+
+                  <div className="mb-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
+                    <span className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-mono">Cover</span>
+                    {variant.coverImageUrl ? (
+                      <>
+                        <img
+                          src={variant.coverImageUrl}
+                          alt={`${variant.label} cover`}
+                          className="h-10 w-10 border border-border object-cover"
+                        />
+                        {canEdit && (
+                          <button className={buttonClass} disabled={busy} onClick={() => handleSetStyleCover(variant.id, null)}>
+                            Clear
+                          </button>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-xs text-text-muted font-mono">Falls back to the product image</span>
+                    )}
+                    {canEdit && selected.images.length > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] uppercase tracking-[0.15em] text-text-muted font-mono">Use</span>
+                        {selected.images.map((image) => (
+                          <button
+                            key={image}
+                            type="button"
+                            title="Use as style cover"
+                            disabled={busy}
+                            onClick={() => handleSetStyleCover(variant.id, image)}
+                            className={`h-10 w-10 overflow-hidden border transition-opacity ${
+                              variant.coverImageUrl === image
+                                ? 'border-accent opacity-100'
+                                : 'border-border opacity-60 hover:opacity-100'
+                            }`}
+                          >
+                            <img src={image} alt="" className="h-full w-full object-cover" />
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   {variant.packages.length > 0 ? (

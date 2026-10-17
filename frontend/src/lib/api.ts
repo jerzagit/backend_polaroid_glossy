@@ -87,6 +87,8 @@ export const catalogAPI = {
   },
   getProducts: () => api.get('/admin/catalog/products'),
   getProduct: (id: number) => api.get(`/admin/catalog/products/${id}`),
+  setVariantCover: (variantId: number, coverImageUrl: string | null) =>
+    api.put(`/admin/catalog/variants/${variantId}/cover`, { coverImageUrl }),
   createProduct: (data: Record<string, unknown>) =>
     api.post('/admin/catalog/products', data),
   updateProduct: (id: number, data: Record<string, unknown>) =>

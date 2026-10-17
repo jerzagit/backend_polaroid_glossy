@@ -104,6 +104,7 @@ export interface CatalogVariant {
   style: ProductStyle;
   label: string;
   active: boolean;
+  coverImageUrl?: string | null;
   packages: CatalogPackage[];
 }
 
