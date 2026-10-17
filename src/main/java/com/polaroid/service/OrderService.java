@@ -75,7 +75,11 @@ public class OrderService {
         if (user != null && request.getCheckoutKey() != null) {
             userRepository.lockById(user.getId()).orElseThrow();
             var existing = orderRepository.findByUserIdAndCheckoutKey(user.getId(), request.getCheckoutKey());
-            if (existing.isPresent()) return orderMapper.toDto(existing.get());
+            if (existing.isPresent()) {
+                if (request.getItems().stream().anyMatch(i -> i.getStripDesign() != null))
+                    throw new BadRequestException("Checkout key is already used by another order request");
+                return orderMapper.toDto(existing.get());
+            }
         }
         User affiliate = null;
         if (request.getAffiliateCode() != null && !request.getAffiliateCode().isEmpty()) {
@@ -87,6 +91,19 @@ public class OrderService {
         
         for (OrderRequest.OrderItemRequest itemReq : request.getItems()) {
             OrderItem item = buildOrderItem(itemReq);
+            if (StripDesigns.isStrip(item.getSizeId()) || itemReq.getStripDesign() != null) {
+                if (itemReq.getProductId() == null || itemReq.getPackageId() == null || itemReq.getVariantId() == null)
+                    throw new BadRequestException("Strip designs require a catalog product, variant and package");
+                if (request.getCheckoutKey() == null || !request.getCheckoutKey().matches("[a-fA-F0-9]{8}(-[a-fA-F0-9]{4}){3}-[a-fA-F0-9]{12}"))
+                    throw new BadRequestException("Strip checkout requires a UUID Idempotency-Key or checkoutKey");
+                if ((itemReq.getImageUrls() != null && !itemReq.getImageUrls().isEmpty())
+                        || (itemReq.getCustomTexts() != null && !itemReq.getCustomTexts().isEmpty()))
+                    throw new BadRequestException("Strip sources must use reserved assets, not image URLs or custom texts");
+                var state = StripDesigns.reserve(item.getSizeId(), item.getQuantity(), itemReq.getStripDesign());
+                StripDesigns.write(item, state, objectMapper);
+                item.setExpectedImageCount(state.getAssets().size());
+                item.setImages("[]"); item.setS3Keys("[]");
+            }
             subtotal = subtotal.add(item.getTotalPrice());
             orderItems.add(item);
         }
@@ -515,7 +532,9 @@ public class OrderService {
         if (packageCount < 1) {
             throw new BadRequestException("packages must be at least 1");
         }
-        int totalPrints = resolved.pkg().getQuantity() * packageCount;
+        int totalPrints;
+        try { totalPrints = Math.multiplyExact(resolved.pkg().getQuantity(), packageCount); }
+        catch (ArithmeticException e) { throw new BadRequestException("Package quantity is too large"); }
 
         return OrderItem.builder()
                 .sizeId(resolved.product().getCode())

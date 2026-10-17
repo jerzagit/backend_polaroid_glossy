@@ -30,6 +30,13 @@ public class OrderController {
     
     private final OrderService orderService;
     private final PaymentService paymentService;
+    private final com.polaroid.service.StripCheckoutService stripCheckoutService;
+
+    @GetMapping("/capabilities")
+    public Map<String, Object> capabilities() {
+        return Map.of("stripDesign", Map.of("schemaVersions", List.of(1), "productCodes", List.of("strip-3", "strip-4"),
+                "maxDesigns", 100, "maxAssets", 400, "requiresIdempotencyKey", true));
+    }
 
     @Value("${app.mock-payments.enabled:false}")
     private boolean mockPaymentsEnabled;
@@ -37,9 +44,16 @@ public class OrderController {
     @PostMapping
     public ResponseEntity<Map<String, Object>> createOrder(
             @Valid @RequestBody OrderRequest request,
+            @RequestHeader(value = "Idempotency-Key", required = false) String idempotencyKey,
             Authentication authentication) {
+        if (idempotencyKey != null) {
+            if (request.getCheckoutKey() != null && !request.getCheckoutKey().equals(idempotencyKey))
+                throw new com.polaroid.exception.BadRequestException("Idempotency-Key and checkoutKey must agree");
+            request.setCheckoutKey(idempotencyKey);
+        }
         String userEmail = authentication != null ? authentication.getName() : null;
-        OrderResponse order = orderService.createOrder(request, userEmail);
+        boolean strip = request.getItems().stream().anyMatch(i -> i.getStripDesign() != null);
+        OrderResponse order = strip ? stripCheckoutService.create(request, userEmail) : orderService.createOrder(request, userEmail);
         return ResponseEntity.ok(Map.of("success", true, "order", order));
     }
 

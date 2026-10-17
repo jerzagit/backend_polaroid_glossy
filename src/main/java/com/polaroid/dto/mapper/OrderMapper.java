@@ -107,7 +107,15 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
     }
     
     private OrderItemResponse toItemDto(OrderItem item) {
+        var strip = com.polaroid.service.StripDesigns.read(item, objectMapper);
         return OrderItemResponse.builder()
+                .stripDesign(com.polaroid.service.StripDesigns.view(item, objectMapper, storageService))
+                .allocatedPrintCount(strip == null ? null : strip.getDesigns().stream().mapToInt(d -> d.getCopies()).sum())
+                .expectedAssetCount(strip == null ? null : strip.getAssets().size())
+                .uploadedAssetCount(strip == null ? null : com.polaroid.service.StripDesigns.uploaded(strip))
+                .designCount(strip == null ? null : strip.getDesigns().size())
+                .fulfillmentReady(com.polaroid.service.StripDesigns.isStrip(item.getSizeId()) ? com.polaroid.service.StripDesigns.ready(item, objectMapper) : null)
+                .requiresSellerReview(com.polaroid.service.StripDesigns.isStrip(item.getSizeId()) && strip == null)
                 .id(item.getId().toString())
                 .sizeId(item.getSizeId())
                 .sizeName(item.getSizeName())

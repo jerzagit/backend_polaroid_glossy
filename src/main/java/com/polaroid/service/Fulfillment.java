@@ -10,6 +10,7 @@ public final class Fulfillment {
     private Fulfillment() {}
     public static boolean photosComplete(Order order, ObjectMapper mapper) {
         return order.getItems() != null && !order.getItems().isEmpty() && order.getItems().stream().allMatch(item -> {
+            if (StripDesigns.isStrip(item.getSizeId())) return StripDesigns.ready(item, mapper);
             int expected = item.getExpectedImageCount() != null ? item.getExpectedImageCount() : item.getQuantity() == null ? 0 : item.getQuantity();
             try {
                 String json = item.getS3Keys() != null ? item.getS3Keys() : item.getImages();

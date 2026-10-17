@@ -54,6 +54,77 @@ public class FileService {
     private final UserRepository userRepository;
     private final ObjectMapper objectMapper;
 
+    @jakarta.persistence.PersistenceContext
+    private jakarta.persistence.EntityManager entityManager;
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> uploadStripAsset(MultipartFile file, String orderId, String orderItemId,
+            String customerEmail, String userEmail, String uploadToken, String clientIp, String assetId) throws IOException {
+        if (orderItemId == null || orderItemId.isBlank()) throw new BadRequestException("orderItemId is required for strip assets");
+        Order order = userEmail == null ? findOrder(orderId) : findAuthorizedOrder(orderId, userEmail);
+        orderRepository.lockById(order.getId()).orElseThrow();
+        if (entityManager != null) entityManager.refresh(order);
+        validateCustomerEmailMatches(order, customerEmail);
+        if (userEmail == null) validateGuestUploadToken(order, uploadToken);
+        if (!Set.of(OrderStatus.DRAFT, OrderStatus.PENDING, OrderStatus.PROCESSING).contains(order.getStatus())
+                || Set.of(PaymentStatus.FAILED, PaymentStatus.CANCELLED, PaymentStatus.REFUNDED).contains(order.getPaymentStatus())
+                || (order.getExpiresAt() != null && order.getExpiresAt().isBefore(LocalDateTime.now())))
+            throw new UploadConflictException("Order is not open for uploads");
+        OrderItem item = resolveOrderItemForUpdate(order, orderItemId);
+        if (!StripDesigns.isStrip(item.getSizeId()) || item.getStripDesign() == null)
+            throw new BadRequestException("This item has no reserved strip assets");
+        var state = StripDesigns.read(item, objectMapper);
+        var asset = state.getAssets().stream().filter(a -> a.getId().equals(assetId)).findFirst()
+                .orElseThrow(() -> new BadRequestException("Asset does not belong to this order item"));
+        if (file == null || file.isEmpty() || file.getSize() > MAX_FILE_SIZE) throw new BadRequestException("Choose an image up to 25 MB");
+        byte[] bytes = file.getBytes();
+        String hash;
+        try { hash = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
+        catch (Exception e) { throw new IllegalStateException(e); }
+        if ("uploaded".equals(asset.getStatus())) {
+            if (!hash.equals(asset.getSha256())) throw new UploadConflictException("Reserved asset is finalized; replacement requires a new design revision");
+        } else {
+            if (order.getStatus() == OrderStatus.PROCESSING) throw new UploadConflictException("Strip designs are frozen for production");
+            String format = detectImageFormat(bytes);
+            if (format == null || !ALLOWED_FORMATS.contains(format)) throw new BadRequestException("Choose JPEG, PNG or WebP source images");
+            // Validate dimensions before decoding and preserve the accepted source bytes, including orientation metadata.
+            try (var input = ImageIO.createImageInputStream(new ByteArrayInputStream(bytes))) {
+                var readers = ImageIO.getImageReaders(input);
+                if (!readers.hasNext()) throw new BadRequestException("Image could not be decoded");
+                var reader = readers.next();
+                try {
+                    reader.setInput(input);
+                    int width = reader.getWidth(0), height = reader.getHeight(0);
+                    if (width > MAX_IMAGE_DIMENSION || height > MAX_IMAGE_DIMENSION || (long) width * height * 4 > MAX_DECODED_MEMORY)
+                        throw new BadRequestException("Image exceeds the supported dimensions or decoded size");
+                    if (reader.read(0) == null) throw new BadRequestException("Image could not be decoded");
+                    asset.setWidth(width); asset.setHeight(height);
+                } finally { reader.dispose(); }
+            }
+            String extension = "jpeg".equals(format) ? "jpg" : format;
+            String key = "orders/" + order.getId() + "/assets/" + asset.getId() + "/original." + extension;
+            storageService.upload(key, bytes, "image/" + format);
+            if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+                org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCompletion(int status) { if (status != STATUS_COMMITTED) storageService.delete(key); }
+                });
+            }
+            asset.setStorageKey(key); asset.setSha256(hash); asset.setMimeType("image/" + format); asset.setStatus("uploaded");
+            String original = file.getOriginalFilename();
+            if (original != null) asset.setOriginalFilename(original.replaceAll("[\\p{Cntrl}]", "").substring(0, Math.min(original.replaceAll("[\\p{Cntrl}]", "").length(), 255)));
+            StripDesigns.write(item, state, objectMapper);
+            orderItemRepository.saveAndFlush(item);
+            Fulfillment.reconcile(order, objectMapper);
+            orderRepository.save(order);
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("assetId", asset.getId()); result.put("orderItemId", item.getId().toString());
+        result.put("url", storageService.getSignedUrl(asset.getStorageKey(), IMAGE_URL_EXPIRATION_SECONDS));
+        result.put("uploadedAssetCount", StripDesigns.uploaded(state)); result.put("expectedAssetCount", state.getAssets().size());
+        result.put("fulfillmentReady", StripDesigns.ready(item, objectMapper));
+        return result;
+    }
+
     private static final long MAX_FILE_SIZE = 25 * 1024 * 1024L;
     private static final long MAX_DECODED_MEMORY = 100 * 1024 * 1024L;
     private static final int MAX_IMAGE_DIMENSION = 10000;
@@ -114,6 +185,7 @@ public class FileService {
 
     private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId, String photoId) throws IOException {
         OrderItem item = resolveOrderItemForUpdate(order, orderItemId);
+        if (StripDesigns.isStrip(item.getSizeId())) throw new BadRequestException("Strip uploads require a reserved assetId");
         if (photoId != null) {
             String prefix = "orders/" + order.getOrderNumber() + "/" + item.getId() + "/upload-" + photoId + ".";
             var existing = readJsonStringList(item.getS3Keys()).stream().filter(key -> key.startsWith(prefix)).findFirst();
@@ -318,6 +390,8 @@ public class FileService {
     }
 
     public void deleteFile(String key) throws IOException {
+        if (key != null && key.startsWith("orders/") && key.contains("/assets/"))
+            throw new UploadConflictException("Finalized strip source assets cannot be deleted through the legacy file endpoint");
         try {
             storageService.delete(key);
         } catch (Exception e) {
