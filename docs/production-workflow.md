@@ -107,11 +107,22 @@ Build only:
 flyctl deploy --remote-only --build-only --app polaroid-glossy-backend
 ```
 
-Deploy:
+Deploy from this machine (preflight, deploy, then confirm health):
 
 ```bash
-flyctl deploy --app polaroid-glossy-backend
+scripts/deploy-prod.sh
 ```
+
+Check what would ship without deploying:
+
+```bash
+scripts/deploy-prod.sh --check
+```
+
+CI (`.github/workflows/ci.yml`) must pass before `.github/workflows/fly-deploy.yml`
+deploys the same commit to Fly; a red build never reaches production. When GitHub
+Actions is unavailable, `scripts/deploy-prod.sh` runs the same `flyctl deploy` from
+the working tree and warns about a dirty tree, a non-`main` branch, or unpushed commits.
 
 Verify health:
 

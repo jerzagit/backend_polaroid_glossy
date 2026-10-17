@@ -1,7 +1,12 @@
 name: Deploy to Fly
 
+# Deploys only after the CI workflow succeeds for the same commit, so a red
+# build can never reach production. Manual runs via workflow_dispatch always
+# deploy the default branch.
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
 
@@ -10,9 +15,20 @@ jobs:
     name: Deploy backend
     runs-on: ubuntu-latest
     concurrency: fly-backend-deploy
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_branch == 'main')
 
     steps:
+      - name: Resolve commit to deploy
+        id: target
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.target.outputs.sha }}
 
       - uses: superfly/flyctl-actions/setup-flyctl@master
 

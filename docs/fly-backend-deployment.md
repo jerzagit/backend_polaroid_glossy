@@ -19,7 +19,8 @@ For the full release workflow, see `docs/production-workflow.md`.
 - `Dockerfile` builds the Spring Boot jar with Maven and runs it on Eclipse Temurin Java 17.
 - `.dockerignore` keeps frontend, local storage, env files, target output, and docs out of the Docker build context.
 - `fly.toml` configures the Fly app, region, port, production Spring profile, and health check.
-- `.github/workflows/fly-deploy.yml` deploys `main` to Fly.io with `flyctl deploy --remote-only`.
+- `.github/workflows/fly-deploy.yml` deploys `main` to Fly.io with `flyctl deploy --remote-only`, but only after `.github/workflows/ci.yml` succeeds for the same commit.
+- `scripts/deploy-prod.sh` runs the same deploy from a local machine (with a `--check` preflight) for when GitHub Actions is unavailable.
 - `HealthController` exposes `GET /api/health`.
 
 ## Required Fly Secrets
