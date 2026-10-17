@@ -12,7 +12,7 @@ import java.sql.DriverManager;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
-/** Validates the V26 / V27 catalog migrations against the JPA entity mappings. */
+/** Validates the V26 / V27 / V29 catalog migrations against the JPA entity mappings. */
 class CatalogSchemaMappingTest {
 
     @Test
@@ -48,6 +48,7 @@ class CatalogSchemaMappingTest {
 
             runScript(connection, "V26__Create_products_catalog.sql");
             runScript(connection, "V27__Seed_products_and_retire_duplicate_sizes.sql");
+            runScript(connection, "V29__Add_variant_cover_image.sql");
 
             try (var statement = connection.createStatement()) {
                 var rs = statement.executeQuery(

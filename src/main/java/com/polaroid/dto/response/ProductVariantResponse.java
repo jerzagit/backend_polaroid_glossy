@@ -17,5 +17,7 @@ public class ProductVariantResponse {
     private ProductStyle style;
     private String label;
     private Boolean active;
+    /** Absolute HTTPS cover for this style, or null when it has none of its own. */
+    private String coverImageUrl;
     private List<ProductPackageResponse> packages;
 }

@@ -40,4 +40,11 @@ public class ProductVariant extends Auditable {
     @Column(name = "sort_order")
     @Builder.Default
     private Integer sortOrder = 0;
+
+    /**
+     * Optional cover for this style, pointing at one of the product's gallery images.
+     * Null means the storefront falls back to the product-level cover.
+     */
+    @Column(name = "cover_image_url")
+    private String coverImageUrl;
 }

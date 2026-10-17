@@ -4,6 +4,7 @@ import com.polaroid.dto.request.admin.CatalogPackageCreateRequest;
 import com.polaroid.dto.request.admin.CatalogPackageUpdateRequest;
 import com.polaroid.dto.request.admin.CatalogProductCreateRequest;
 import com.polaroid.dto.request.admin.CatalogProductUpdateRequest;
+import com.polaroid.dto.request.admin.CatalogVariantCoverRequest;
 import com.polaroid.dto.request.admin.CatalogVariantCreateRequest;
 import com.polaroid.dto.request.admin.CatalogVariantUpdateRequest;
 import com.polaroid.dto.response.ProductListingResponse;
@@ -72,6 +73,15 @@ public class CatalogAdminController {
             @PathVariable Long variantId,
             @Valid @RequestBody CatalogVariantUpdateRequest request) {
         return ResponseEntity.ok(catalogAdminService.updateVariant(variantId, request));
+    }
+
+    /** Set (or clear, by sending null) the cover image of one style variant. */
+    @PutMapping("/variants/{variantId}/cover")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<ProductListingResponse> setVariantCover(
+            @PathVariable Long variantId,
+            @RequestBody CatalogVariantCoverRequest request) {
+        return ResponseEntity.ok(catalogAdminService.setVariantCover(variantId, request.getCoverImageUrl()));
     }
 
     @PostMapping("/variants/{variantId}/packages")

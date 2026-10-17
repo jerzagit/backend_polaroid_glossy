@@ -119,6 +119,7 @@ public class ProductService {
                         .style(v.getStyle())
                         .label(v.getLabel())
                         .active(Boolean.TRUE.equals(v.getIsActive()))
+                        .coverImageUrl(v.getCoverImageUrl())
                         .packages(packagesFor(v.getId(), includeInactive))
                         .build())
                 .collect(Collectors.toList());

@@ -42,7 +42,7 @@ class ProductImageServiceTest {
         listings = new ProductService(products, mock(ProductAliasRepository.class), metadata,
                 mock(PrintSizePricingTierRepository.class), mock(ProductVariantRepository.class),
                 mock(ProductPackageRepository.class), mapper);
-        service = new ProductImageService(products, metadata, listings, storage, mapper);
+        service = new ProductImageService(products, metadata, listings, storage, mapper, mock(ProductVariantRepository.class));
         ReflectionTestUtils.setField(service, "publicApiUrl", "https://api.example.com");
     }
 

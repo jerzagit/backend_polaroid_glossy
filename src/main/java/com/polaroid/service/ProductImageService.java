@@ -7,8 +7,10 @@ import com.polaroid.exception.BadRequestException;
 import com.polaroid.exception.ResourceNotFoundException;
 import com.polaroid.model.Product;
 import com.polaroid.model.ProductMeta;
+import com.polaroid.model.ProductVariant;
 import com.polaroid.repository.ProductRepository;
 import com.polaroid.repository.ProductMetaRepository;
+import com.polaroid.repository.ProductVariantRepository;
 import com.polaroid.storage.StorageService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -27,11 +29,13 @@ import java.util.*;
 @Service
 @RequiredArgsConstructor
 public class ProductImageService {
+    private static final int MAX_URL_LENGTH = 2048;
     private final ProductRepository products;
     private final ProductMetaRepository metadata;
     private final ProductService productService;
     private final StorageService storage;
     private final ObjectMapper mapper;
+    private final ProductVariantRepository variants;
 
     @Value("${app.public-api-url:http://localhost:8080}")
     private String publicApiUrl;
@@ -48,7 +52,31 @@ public class ProductImageService {
             normalized.add(url);
         }
         save(product, normalized);
+        clearOrphanedVariantCovers(product.getId(), normalized);
         return productService.getProductForAdmin(id);
+    }
+
+    /**
+     * A variant cover is a pointer into the product gallery, and the public image endpoint only
+     * serves URLs still listed there. Removing a gallery image therefore has to drop any style
+     * cover pointing at it, otherwise the storefront would request a 404.
+     */
+    private void clearOrphanedVariantCovers(Long productId, List<String> gallery) {
+        for (ProductVariant variant : variants.findByProductIdOrderBySortOrderAscIdAsc(productId)) {
+            String cover = variant.getCoverImageUrl();
+            if (cover != null && !gallery.contains(cover)) {
+                variant.setCoverImageUrl(null);
+                variants.save(variant);
+            }
+        }
+    }
+
+    /** The product's current gallery, used to validate style covers against it. */
+    @Transactional(readOnly = true)
+    public List<String> gallery(Long productId) {
+        Product product = products.findById(productId)
+                .orElseThrow(() -> new ResourceNotFoundException("Product not found: " + productId));
+        return List.copyOf(images(product));
     }
 
     @Transactional
@@ -109,11 +137,16 @@ public class ProductImageService {
     }
 
     private boolean validUrl(String value) {
-        if (value.length() > 2048) return false;
+        return isHttpsUrl(value) || value.startsWith(publicApiUrl + "/api/products/");
+    }
+
+    /** Absolute HTTPS URL with a host, no user info, and a sane length. */
+    static boolean isHttpsUrl(String value) {
+        if (value == null || value.isBlank() || value.length() > MAX_URL_LENGTH) return false;
         try {
             URI uri = URI.create(value);
             return uri.getHost() != null && uri.getUserInfo() == null &&
-                    ("https".equalsIgnoreCase(uri.getScheme()) || value.startsWith(publicApiUrl + "/api/products/"));
+                    "https".equalsIgnoreCase(uri.getScheme());
         } catch (IllegalArgumentException ex) { return false; }
     }
 

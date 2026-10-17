@@ -1,0 +1,66 @@
+# Backend request: expose variation cover images
+
+Expose each product variation's configured cover image in the public catalog responses:
+
+- `GET /api/products`
+- `GET /api/products/{id}`, including numeric IDs, product codes, and supported aliases.
+
+## Response contract
+
+Add `coverImageUrl: string | null` to every object in `variants`:
+
+```json
+{
+  "id": 1,
+  "code": "ic",
+  "image": "https://example.com/product-cover.jpg",
+  "images": ["https://example.com/product-cover.jpg"],
+  "variants": [
+    {
+      "id": 1,
+      "style": "FULL",
+      "label": "Full",
+      "active": true,
+      "coverImageUrl": "https://example.com/ic-full-cover.jpg",
+      "packages": []
+    },
+    {
+      "id": 11,
+      "style": "BORDER",
+      "label": "Border (Polaroid)",
+      "active": true,
+      "coverImageUrl": "https://example.com/ic-border-cover.jpg",
+      "packages": []
+    }
+  ]
+}
+```
+
+This example shows relevant fields only; preserve all existing response fields and package data.
+
+## Requirements
+
+- Read the cover configured for the specific variation in the admin catalog.
+- Return an absolute HTTPS URL accessible by the storefront without admin authentication.
+- Always include `coverImageUrl`; use `null` when no variation cover is configured.
+- Preserve existing product-level `image` and `images` fields.
+- Return the same variation cover URL in list and detail responses.
+- Reflect admin cover updates and removals in subsequent public responses.
+- Preserve existing alias filtering behavior.
+
+## Verification
+
+1. Configure different cover images for IC FULL and BORDER.
+2. Confirm the list and detail endpoints return the respective URLs.
+3. Check numeric-ID, product-code, and supported alias detail requests.
+4. Verify a variation without a cover returns `coverImageUrl: null`.
+5. Change and remove a cover, confirming the public responses reflect each action.
+6. Verify the image URLs can be loaded without admin authentication.
+
+## Frontend follow-up
+
+Once deployed, the frontend must add this field to `ProductVariant` and preserve it in `normalizeVariants` in `src/lib/product-pricing.ts`. The selected variation's cover can then be displayed, falling back to the parent product image when null. Current catalog cards and the product gallery use parent product images.
+
+## Observed baseline
+
+On 2026-10-18, the deployed backend at `https://polaroid-glossy-backend.fly.dev` returned only `id`, `style`, `label`, `active`, and `packages` for all 11 variants in `GET /api/products`. The IC detail response also omitted variation image fields.

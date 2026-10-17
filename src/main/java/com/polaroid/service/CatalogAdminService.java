@@ -48,6 +48,7 @@ public class CatalogAdminService {
     private final ProductVariantRepository variantRepository;
     private final ProductPackageRepository packageRepository;
     private final ProductService productService;
+    private final ProductImageService productImageService;
 
     /* ---------- products (sizes) ---------- */
 
@@ -135,6 +136,29 @@ public class CatalogAdminService {
         if (request.getLabel() != null && !request.getLabel().isBlank()) variant.setLabel(request.getLabel().trim());
         if (request.getIsActive() != null) variant.setIsActive(request.getIsActive());
         if (request.getSortOrder() != null) variant.setSortOrder(request.getSortOrder());
+        variantRepository.save(variant);
+        return productService.getProductForAdmin(variant.getProductId());
+    }
+
+    /**
+     * Sets one style's cover to an image already in the product gallery, or clears it with null.
+     * Gallery membership is enforced because the public image endpoint only serves URLs listed
+     * there; a pointer outside the gallery would render as a broken image on the storefront.
+     */
+    @Transactional
+    public ProductListingResponse setVariantCover(Long variantId, String coverImageUrl) {
+        ProductVariant variant = findVariant(variantId);
+        if (coverImageUrl == null) {
+            variant.setCoverImageUrl(null);
+        } else {
+            String url = coverImageUrl.trim();
+            if (url.isEmpty()) throw new BadRequestException("Send null to clear the style cover");
+            if (!ProductImageService.isHttpsUrl(url))
+                throw new BadRequestException("Style covers must be absolute HTTPS URLs");
+            if (!productImageService.gallery(variant.getProductId()).contains(url))
+                throw new BadRequestException("Style covers must reuse an image from this product's gallery");
+            variant.setCoverImageUrl(url);
+        }
         variantRepository.save(variant);
         return productService.getProductForAdmin(variant.getProductId());
     }
