@@ -30,4 +30,11 @@ public class OrderItemResponse {
     private List<String> images;
     private List<String> uploadedPhotoIds;
     private List<String> customTexts;
+    private java.util.Map<String, Object> stripDesign;
+    private Integer allocatedPrintCount;
+    private Integer expectedAssetCount;
+    private Integer uploadedAssetCount;
+    private Integer designCount;
+    private Boolean fulfillmentReady;
+    private Boolean requiresSellerReview;
 }

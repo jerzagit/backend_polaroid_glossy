@@ -22,6 +22,7 @@ import java.util.Map;
 public class FileController {
     
     private final FileService fileService;
+    private final com.polaroid.service.StripExportService stripExports;
     
     @PostMapping("/upload")
     public ResponseEntity<Map<String, Object>> uploadFile(
@@ -31,11 +32,15 @@ public class FileController {
             @RequestParam(value = "uploadToken", required = false) String uploadToken,
             @RequestParam(value = "orderItemId", required = false) String orderItemId,
             @RequestParam(value = "photoId", required = false) String photoId,
+            @RequestParam(value = "assetId", required = false) String assetId,
             Authentication authentication,
             HttpServletRequest request) throws IOException {
 
         Map<String, Object> result;
-        if (authentication != null && photoId != null) {
+        if (assetId != null) {
+            result = fileService.uploadStripAsset(file, orderId, orderItemId, customerEmail,
+                    authentication == null ? null : authentication.getName(), uploadToken, clientIp(request), assetId);
+        } else if (authentication != null && photoId != null) {
             result = fileService.uploadWithId(file, orderId, orderItemId, customerEmail, authentication.getName(), photoId);
         } else if (authentication != null) {
             result = fileService.uploadFile(file, orderId, orderItemId, customerEmail, authentication.getName());
@@ -90,7 +95,8 @@ public class FileController {
     
     @GetMapping("/order/{orderId}/download")
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING', 'PACKER')")
-    public ResponseEntity<byte[]> downloadOrderFiles(@PathVariable String orderId) throws IOException {
+    public ResponseEntity<?> downloadOrderFiles(@PathVariable String orderId) throws IOException {
+        if (stripExports.hasStrips(orderId)) return stripExports.download(orderId, null, null);
         List<Map<String, String>> files = fileService.listFilesForStaff(orderId);
         
         if (files.isEmpty()) {

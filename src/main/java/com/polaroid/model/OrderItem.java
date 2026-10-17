@@ -77,4 +77,7 @@ public class OrderItem extends Auditable {
     
     @Column(name = "s3_keys", columnDefinition = "TEXT")
     private String s3Keys;
+
+    @Column(name = "strip_design", columnDefinition = "TEXT")
+    private String stripDesign;
 }

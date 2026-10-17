@@ -64,10 +64,12 @@ public class OrderRequest {
     
     @Valid
     @NotNull(message = "Items are required")
+    @jakarta.validation.constraints.Size(min = 1, max = 20)
     private List<OrderItemRequest> items;
     
     @Data
     public static class OrderItemRequest {
+        private StripDesignRequest stripDesign;
         /** Legacy selection: size id + per-print price (still supported). */
         private String sizeId;
 
