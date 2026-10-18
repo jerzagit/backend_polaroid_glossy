@@ -200,7 +200,7 @@ public class EmailService {
             if (order.getCustomerEmail() != null && !order.getCustomerEmail().isBlank()) {
                 helper.setReplyTo(order.getCustomerEmail());
             }
-            helper.setSubject("New order / Pesanan baru - " + order.getOrderNumber());
+            helper.setSubject("Paid order / Pesanan dibayar - " + order.getOrderNumber());
             helper.setText(buildNewOrderBody(order), false);
             mailSender.send(message);
             log.info("New order alert sent for {} to {}", order.getOrderNumber(), String.join(",", recipients));
@@ -216,6 +216,15 @@ public class EmailService {
             .append("Customer: ").append(text(order.getCustomerName())).append('\n')
             .append("Email:    ").append(text(order.getCustomerEmail())).append('\n')
             .append("Phone:    ").append(text(order.getCustomerPhone())).append('\n')
+            .append("Ship to:  ").append(text(order.getCustomerHouseUnitNo())).append(", ")
+            .append(text(order.getCustomerAddressLine1()))
+            .append(order.getCustomerAddressLine2() == null || order.getCustomerAddressLine2().isBlank()
+                    ? "" : ", " + order.getCustomerAddressLine2())
+            .append('\n')
+            .append("          ").append(text(order.getCustomerPostcode())).append(' ')
+            .append(text(order.getCustomerCity())).append(", ")
+            .append(text(order.getCustomerState())).append(", ")
+            .append(text(order.getCustomerCountry())).append('\n')
             .append("Status:   ").append(order.getStatus())
             .append(" / payment ").append(order.getPaymentStatus()).append('\n')
             .append("Total:    ").append(money(order.getTotal())).append("\n\nItems:\n");

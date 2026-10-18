@@ -159,7 +159,6 @@ public class OrderService {
         addStatusHistory(savedOrder, initialStatus, isGuest ? "Draft order created" : "Order created");
 
         emailService.sendOrderConfirmation(savedOrder);
-        emailService.sendNewOrderAlert(savedOrder);
         
         OrderResponse response = orderMapper.toDto(savedOrder);
         response.setUploadToken(uploadToken);
@@ -325,6 +324,7 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         
         orderRepository.lockById(order.getId()).orElseThrow();
+        boolean alreadyPaid = order.getPaymentStatus() == PaymentStatus.PAID;
         if (order.getPaymentStatus() == PaymentStatus.PAID && status != PaymentStatus.REFUNDED) {
             status = PaymentStatus.PAID;
         }
@@ -337,7 +337,10 @@ public class OrderService {
                 order.setExpiresAt(null);
             }
             addStatusHistory(order, order.getStatus(), "Payment received");
-            emailService.sendPaymentConfirmation(order);
+            if (!alreadyPaid) {
+                emailService.sendPaymentConfirmation(order);
+                emailService.sendNewOrderAlert(order);
+            }
         }
         
         orderRepository.save(order);
@@ -349,6 +352,7 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
 
         orderRepository.lockById(order.getId()).orElseThrow();
+        boolean alreadyPaid = order.getPaymentStatus() == PaymentStatus.PAID;
         if (order.getPaymentStatus() == PaymentStatus.PAID && status != PaymentStatus.REFUNDED) {
             status = PaymentStatus.PAID;
         }
@@ -357,6 +361,10 @@ public class OrderService {
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
             addStatusHistory(order, order.getStatus(), "Payment confirmed by admin");
+            if (!alreadyPaid) {
+                emailService.sendPaymentConfirmation(order);
+                emailService.sendNewOrderAlert(order);
+            }
         }
         if (status == PaymentStatus.FAILED) {
             addStatusHistory(order, order.getStatus(), "Payment rejected by admin");
@@ -393,11 +401,15 @@ public class OrderService {
 
         switch (action) {
             case "APPROVE" -> {
+                boolean approvedFromUnpaid = order.getPaymentStatus() != PaymentStatus.PAID;
                 order.setPaymentStatus(PaymentStatus.PAID);
                 Fulfillment.reconcile(order, objectMapper);
                 order.setPaidAt(LocalDateTime.now());
                 addStatusHistory(order, order.getStatus(), "Payment verified and approved by " + adminEmail);
-                emailService.sendPaymentConfirmation(order);
+                if (approvedFromUnpaid) {
+                    emailService.sendPaymentConfirmation(order);
+                    emailService.sendNewOrderAlert(order);
+                }
             }
             case "REJECT" -> {
                 order.setPaymentProofUrl(null);
