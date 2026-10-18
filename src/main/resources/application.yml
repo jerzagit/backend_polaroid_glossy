@@ -1,5 +1,7 @@
 server:
   port: 8080
+  # Fly terminates TLS; honour X-Forwarded-* so redirects and absolute URLs use https.
+  forward-headers-strategy: framework
 
 spring:
   application:
