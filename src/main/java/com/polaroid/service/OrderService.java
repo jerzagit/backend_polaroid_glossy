@@ -159,6 +159,7 @@ public class OrderService {
         addStatusHistory(savedOrder, initialStatus, isGuest ? "Draft order created" : "Order created");
 
         emailService.sendOrderConfirmation(savedOrder);
+        emailService.sendNewOrderAlert(savedOrder);
         
         OrderResponse response = orderMapper.toDto(savedOrder);
         response.setUploadToken(uploadToken);
