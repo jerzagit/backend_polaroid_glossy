@@ -100,6 +100,25 @@
                             <td><strong>Tracking:</strong></td>
                             <td th:text="${order.trackingNumber}">TRACK123</td>
                         </tr>
+                        <tr th:if="${order.reopenedAt}">
+                            <td><strong>Reopened:</strong></td>
+                            <td>
+                                <span th:text="${#temporals.format(order.reopenedAt, 'dd/MM/yyyy hh:mm a')}">01/01/2026 12:00 AM</span>
+                                <span th:if="${order.reopenedBy}" th:text="${' by ' + order.reopenedBy}"></span>
+                                <span th:if="${order.reopenCount != null and order.reopenCount > 1}"
+                                      th:text="${' (' + order.reopenCount + ' times)'}"></span>
+                            </td>
+                        </tr>
+                        <tr th:if="${order.filesDeleteAfter != null or order.filesDeletedAt != null}">
+                            <td><strong>Files:</strong></td>
+                            <td>
+                                <span th:if="${order.filesDeletedAt == null}"
+                                      th:text="${'Scheduled for deletion ' + #temporals.format(order.filesDeleteAfter, 'dd/MM/yyyy hh:mm a')}"></span>
+                                <span th:if="${order.filesDeletedAt != null}"
+                                      class="red-text"
+                                      th:text="${'Deleted ' + #temporals.format(order.filesDeletedAt, 'dd/MM/yyyy hh:mm a')}"></span>
+                            </td>
+                        </tr>
                         <tr th:if="${order.status.name() == 'DRAFT' or order.status.name() == 'EXPIRED'}">
                             <td><strong>Expires At:</strong></td>
                             <td>
@@ -239,13 +258,47 @@
             </div>
         </div>
 
-        <!-- Update Status Form (hidden for DRAFT/EXPIRED orders) -->
+        <!-- Reopen a cancelled/expired order -->
+        <div class="row" sec:authorize="hasAnyRole('ADMIN', 'MARKETING')"
+             th:if="${order.status.name() == 'CANCELLED' or order.status.name() == 'EXPIRED'}">
+            <div class="col s12">
+                <div class="card-panel white">
+                    <h5>Reopen Order</h5>
+                    <p>
+                        This returns the order to <strong>PENDING</strong> so the customer can pay or upload again.
+                        Order records are kept; files may already have been deleted.
+                    </p>
+                    <form id="reopen-order-form" th:action="@{/api/admin/orders/{id}/reopen(id=${order.id})}" method="post">
+                        <div class="row">
+                            <div class="col s12">
+                                <label for="reopen-reason">Reason (required)</label>
+                                <textarea id="reopen-reason" name="reason" class="materialize-textarea"
+                                          maxlength="500" required placeholder="Why is this order being reopened?"></textarea>
+                            </div>
+                            <div class="col s12">
+                                <label>
+                                    <input type="checkbox" name="paymentReceived"/>
+                                    <span>Payment already received</span>
+                                </label>
+                            </div>
+                            <div class="col s12">
+                                <button type="submit" class="btn waves-effect waves-light orange" style="margin-top: 10px;">
+                                    <i class="material-icons left">restore</i> Reopen Order
+                                </button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Update Status Form (hidden for DRAFT/EXPIRED/CANCELLED orders) -->
         <div class="row" sec:authorize="hasAnyRole('ADMIN', 'MARKETING', 'PACKER')"
-             th:if="${order.status.name() != 'DRAFT' and order.status.name() != 'EXPIRED'}">
+             th:if="${order.status.name() != 'DRAFT' and order.status.name() != 'EXPIRED' and order.status.name() != 'CANCELLED'}">
             <div class="col s12">
                 <div class="card-panel white">
                     <h5>Update Order Status</h5>
-                    <form th:action="@{/api/admin/orders/{id}/status(id=${order.id})}" method="post">
+                    <form id="order-status-form" th:action="@{/api/admin/orders/{id}/status(id=${order.id})}" method="post">
                         <div class="row">
                             <div class="col s12 m4">
                                 <label>New Status</label>
@@ -289,6 +342,51 @@
             }).catch(function() { alert('Failed to update payment status'); });
         });
     });
+
+    var statusForm = document.getElementById('order-status-form');
+    if (statusForm) {
+        statusForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var status = this.querySelector('select[name="status"]').value;
+            var message = this.querySelector('input[name="message"]').value;
+            fetch(this.action, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: status, message: message })
+            }).then(function(res) {
+                if (res.ok) { location.reload(); return; }
+                return res.json().catch(function() { return {}; }).then(function(data) {
+                    alert(data.error || data.message || 'Failed to update order status');
+                });
+            }).catch(function() { alert('Failed to update order status'); });
+        });
+    }
+
+    var reopenForm = document.getElementById('reopen-order-form');
+    if (reopenForm) {
+        reopenForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            var reason = this.querySelector('textarea[name="reason"]').value.trim();
+            var paymentReceived = this.querySelector('input[name="paymentReceived"]').checked;
+            if (!reason) { alert('Please enter a reason'); return; }
+            fetch(this.action, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ reason: reason, paymentReceived: paymentReceived })
+            }).then(function(res) {
+                return res.json().catch(function() { return {}; }).then(function(data) {
+                    if (!res.ok) {
+                        alert(data.error || data.message || 'Failed to reopen order');
+                        return;
+                    }
+                    if (data.uploadToken) {
+                        alert('Order reopened. New upload token: ' + data.uploadToken);
+                    }
+                    location.reload();
+                });
+            }).catch(function() { alert('Failed to reopen order'); });
+        });
+    }
     </script>
 
     <script src="/webjars/jquery/3.7.1/jquery.min.js"></script>

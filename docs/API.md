@@ -196,10 +196,17 @@ rely on them and so the fix is easy to verify:
 | GET | `/api/admin/orders` | ADMIN/MARKETING/PACKER | `status` (optional), `paymentStatus` (optional), `customerState` (optional), `fromDate` (optional), `toDate` (optional), `orderReference` (optional), `customerEmail` (optional), `customerPhone` (optional), `page`=0, `size`=20, `sortBy`=createdAt, `sortDir`=desc |
 | GET | `/api/admin/orders/{id}` | ADMIN/MARKETING/PACKER | `id` path |
 | PATCH | `/api/admin/orders/{id}/status` | ADMIN/MARKETING/PACKER | `id` path, body `OrderStatusUpdateRequest` |
+| POST | `/api/admin/orders/{id}/reopen` | ADMIN/MARKETING | `id` path, body `ReopenOrderRequest` (`reason` required, `paymentReceived` optional) |
 | PATCH | `/api/admin/orders/{id}/tracking` | ADMIN/MARKETING/PACKER | `id` path, `trackingNumber` |
 | POST | `/api/admin/orders/{id}/notes` | ADMIN/MARKETING/PACKER | `id` path, `notes` (optional) |
 | PATCH | `/api/admin/orders/{id}/payment-status` | ADMIN/MARKETING | `id` path, body `UpdatePaymentStatusRequest` |
 | POST | `/api/admin/orders/{orderNumber}/verify-payment` | ADMIN/MARKETING | `orderNumber` path, body `VerifyPaymentRequest` |
+
+Reopening is only available for `CANCELLED` or `EXPIRED` orders. The request body is
+`{"reason": "...", "paymentReceived": false}`; `reason` is required (max 500 characters).
+The response is the updated order and includes `reopenedAt`, `reopenedBy`, `reopenCount`,
+`filesDeleteAfter` and `filesDeletedAt`. For a guest order whose upload token has expired,
+the response also includes a fresh `uploadToken`.
 
 #### Admin: users
 
@@ -394,6 +401,8 @@ Order lifecycle: `DRAFT` (guest, awaiting payment) → `PENDING` (paid or logged
 → `PROCESSING` → `POSTED` → `ON_DELIVERY` → `DELIVERED`, with `CANCELLED`, `REFUNDED` and
 `EXPIRED` as terminal side states. Every transition is recorded in `statusHistory`.
 Drafts that never pay expire (`EXPIRED`) after `app.draft.expiration-hours`.
+Staff can reopen `CANCELLED` or `EXPIRED` orders back to `PENDING`; this records a
+`statusHistory` entry and increments `reopenCount`.
 
 ## Background jobs
 
@@ -402,6 +411,12 @@ Drafts that never pay expire (`EXPIRED`) after `app.draft.expiration-hours`.
 | `DraftCleanupService.cleanupExpiredDrafts` | every 10 min | Expires `DRAFT` orders past `expiresAt` and records history |
 | `PaymentCleanupService.cleanupExpiredPayments` | every hour | Expires unpaid orders past `app.payment.expiration-hours` (default 24 h) |
 | `PaymentCleanupService.remindMissingPhotos` | every hour | Emails after `app.payment.reminder-hours` (default 14 h) when photos are missing |
+| `FileRetentionService.purgeDueOrderFiles` | hourly at :15 | Deletes customer photos and strip assets after the retention window; order rows and payment proofs are kept |
+
+File retention windows: 5 days after cancellation/expiry before shipping, 14 days after
+`DELIVERED`, or 14 days from the first `POSTED`/`ON_DELIVERY` milestone when delivery is
+not recorded. A post-shipping cancellation/refund also uses the 14-day window. Cleanup is
+idempotent, retries partial failures, and supports `FILE_RETENTION_DRY_RUN=true`.
 
 ## Keeping this document honest
 

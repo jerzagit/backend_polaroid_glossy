@@ -75,6 +75,13 @@ app:
   payment:
     expiration-hours: ${PAYMENT_EXPIRATION_HOURS:24}
     reminder-hours: ${PAYMENT_REMINDER_HOURS:14}
+  retention:
+    enabled: ${FILE_RETENTION_ENABLED:true}
+    cancelled-days: ${FILE_RETENTION_CANCELLED_DAYS:5}
+    fulfilled-days: ${FILE_RETENTION_FULFILLED_DAYS:14}
+    cleanup-cron: ${FILE_RETENTION_CLEANUP_CRON:0 15 * * * *}
+    batch-size: ${FILE_RETENTION_BATCH_SIZE:50}
+    dry-run: ${FILE_RETENTION_DRY_RUN:false}
 
 toyyibpay:
   secret-key: ${TOYYIBPAY_SECRET_KEY}

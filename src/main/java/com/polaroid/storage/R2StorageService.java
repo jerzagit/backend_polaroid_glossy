@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -125,6 +126,9 @@ public class R2StorageService implements StorageService {
             HttpEntity<?> entity = new HttpEntity<>(headers);
             restTemplate.exchange(uri, HttpMethod.DELETE, entity, Map.class);
             log.debug("Deleted: {}", key);
+        } catch (HttpClientErrorException.NotFound e) {
+            // Already gone. Retention retries must be idempotent.
+            log.debug("Already deleted: {}", key);
         } catch (Exception e) {
             log.error("Failed to delete {}: {}", key, e.getMessage());
             throw new RuntimeException("Failed to delete file from R2", e);

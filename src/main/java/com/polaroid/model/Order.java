@@ -130,6 +130,32 @@ public class Order extends Auditable {
     
     @Column(name = "cancel_reason")
     private String cancelReason;
+
+    @Column(name = "reopened_at")
+    private LocalDateTime reopenedAt;
+
+    @Column(name = "reopened_by")
+    private String reopenedBy;
+
+    @Column(name = "reopen_count", nullable = false)
+    @Builder.Default
+    private Integer reopenCount = 0;
+
+    /** Earliest time the order's R2 objects may be deleted. Null means no pending deletion. */
+    @Column(name = "files_delete_after")
+    private LocalDateTime filesDeleteAfter;
+
+    /** Set only after every eligible R2 object was deleted. */
+    @Column(name = "files_deleted_at")
+    private LocalDateTime filesDeletedAt;
+
+    @Column(name = "files_delete_attempts", nullable = false)
+    @Builder.Default
+    private Integer filesDeleteAttempts = 0;
+
+    /** Internal cleanup diagnostics; never exposed through the customer API. */
+    @Column(name = "files_delete_error", columnDefinition = "TEXT")
+    private String filesDeleteError;
     
     @Column(columnDefinition = "TEXT")
     private String notes;

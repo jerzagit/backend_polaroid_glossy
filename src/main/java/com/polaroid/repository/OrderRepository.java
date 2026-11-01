@@ -34,6 +34,17 @@ public interface OrderRepository extends JpaRepository<Order, UUID>, JpaSpecific
     long countByUserId(UUID userId);
     long countByUserIdAndStatus(UUID userId, OrderStatus status);
     List<Order> findByStatusAndExpiresAtBefore(OrderStatus status, LocalDateTime expiresAt);
+
+    @org.springframework.data.jpa.repository.Lock(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT o FROM Order o WHERE o.filesDeletedAt IS NULL " +
+           "AND o.filesDeleteAfter IS NOT NULL " +
+           "AND o.filesDeleteAfter <= :now " +
+           "AND o.status IN :statuses " +
+           "ORDER BY o.filesDeleteAfter ASC")
+    List<Order> findDueForFileDeletion(
+            @Param("now") LocalDateTime now,
+            @Param("statuses") List<OrderStatus> statuses,
+            Pageable pageable);
     
     @Query("SELECT o FROM Order o WHERE " +
            "(:status IS NULL OR o.status = :status) AND " +
