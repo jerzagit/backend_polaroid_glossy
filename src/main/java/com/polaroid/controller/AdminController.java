@@ -105,7 +105,7 @@ public class AdminController {
     @GetMapping("/orders/{id}")
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING', 'PACKER')")
     public ResponseEntity<OrderResponse> getOrder(@PathVariable UUID id) {
-        return ResponseEntity.ok(orderService.getOrderByNumber(id.toString()));
+        return ResponseEntity.ok(orderService.getOrderById(id));
     }
     
     @PatchMapping("/orders/{id}/status")

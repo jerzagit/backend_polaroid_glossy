@@ -172,6 +172,13 @@ public class OrderService {
     }
     
     @Transactional(readOnly = true)
+    public OrderResponse getOrderById(UUID id) {
+        Order order = orderRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+        return orderMapper.toDto(order);
+    }
+
+    @Transactional(readOnly = true)
     public OrderResponse getOrderByNumber(String orderNumber) {
         Order order = orderRepository.findByOrderNumber(orderNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
