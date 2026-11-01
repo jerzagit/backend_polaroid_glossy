@@ -150,7 +150,7 @@ These are confirmed code weaknesses, not proof of the cause of every reported sh
 ## Progress
 
 - [x] Phase 1: current upload failures — implemented; see results below
-- [ ] Phase 2: automatic recovery
+- [x] Phase 2: automatic recovery — implemented; see results below
 - [ ] Phase 3: customer experience
 - [ ] Phase 4: large-order architecture
 - [ ] Phase 5: capacity testing and rollout
@@ -182,6 +182,22 @@ Tests: 7 new backend cases (status counts for photos and strips, replay at capac
 - The attempt budget lives in an in-memory per-instance map: it resets on deploy and is not shared between Fly machines. Move it to a shared store during Phase 4.
 - Deploy the backend before the customer frontend: the proxy no longer verifies order state on its own.
 - Refresh still loses files because cart persistence strips `File` objects. That is Phase 2.
+
+### Phase 2 results (2026-11-01)
+
+Frontend only (`polaroid_glossy_backup`). The Phase 1 status endpoint already returns durable per-item counts and saved identities, which is exactly what reconciliation needs, so no new backend endpoint was added.
+
+- `src/lib/upload-queue.ts` keeps an order-linked queue in its own IndexedDB database with one record per photo, so writing 500 photos never holds 500 buffers. A manifest read returns metadata only; file bytes are loaded just for the photos actually being resumed.
+- Photo identities are stored, never re-derived. Re-deriving would have been wrong: the existing `photoStorage.ts` rebuilds files without `lastModified`, which would change a derived identity and duplicate a saved photo.
+- `planResume` is a pure function over the server's status: it fills only the capacity still missing and counts photos with no local copy as unavailable instead of dropping them silently.
+- Checkout persists the queue before uploading and clears it only after success. The order page resumes automatically once per visit and reports how many photos were resumed or still need selecting.
+- Tests: 8 new cases covering only-missing resume, the capacity ceiling, unavailable counting, identity and metadata round-trip, clearing on completion, survival of a failed pass with per-photo state, and missing local storage. Frontend lint, typecheck and 37 tests pass.
+
+### Phase 2 limitations carried forward
+
+- Recovery is per browser profile. Another device, a cleared profile or evicted storage cannot resume, and the UI asks for those files again.
+- Guest recovery beyond the 168-hour upload-token lifetime needs a new token, and only an admin reopen issues one. Signed-in customers are unaffected because their account authorizes the status call, but the order page is sign-in only, so a guest who loses the tab still cannot reach the automatic resume path.
+- Queue writes race the upload on very large orders and are awaited before clearing so no orphaned records remain. Persisting local copies is pointless for a 1,000-photo order; skip or stream them in Phase 4.
 
 ## Browser constraints reference
 
