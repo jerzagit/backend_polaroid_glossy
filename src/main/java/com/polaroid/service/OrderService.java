@@ -536,7 +536,10 @@ public class OrderService {
      * existing per-print pricing until the frontend is fully migrated.
      */
     private OrderItem buildOrderItem(OrderRequest.OrderItemRequest itemReq) {
-        if (itemReq.getPackageId() != null || itemReq.getVariantId() != null) {
+        if (itemReq.getProductId() != null || itemReq.getPackageId() != null || itemReq.getVariantId() != null) {
+            if (itemReq.getPackageId() == null) {
+                throw new BadRequestException("packageId is required for a catalog product selection");
+            }
             return buildPackageOrderItem(itemReq);
         }
         if (itemReq.getSizeId() == null || itemReq.getSizeId().isBlank()) {
@@ -578,6 +581,7 @@ public class OrderService {
 
         return OrderItem.builder()
                 .sizeId(resolved.product().getCode())
+                .productId(resolved.product().getId())
                 .sizeName(resolved.product().getDisplayName())
                 .variantId(String.valueOf(resolved.variant().getId()))
                 .variantLabel(resolved.variant().getLabel())

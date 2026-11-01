@@ -123,6 +123,7 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .requiresSellerReview(com.polaroid.service.StripDesigns.isStrip(item.getSizeId()) && strip == null)
                 .id(item.getId().toString())
                 .sizeId(item.getSizeId())
+                .productId(item.getProductId())
                 .sizeName(item.getSizeName())
                 .variantId(item.getVariantId())
                 .variantLabel(item.getVariantLabel())

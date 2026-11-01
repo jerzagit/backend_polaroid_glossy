@@ -30,6 +30,10 @@ public class OrderItem extends Auditable {
     @Column(name = "size_name")
     private String sizeName;
 
+    /** Catalog identity at checkout; nullable for legacy size-only orders. */
+    @Column(name = "product_id")
+    private Long productId;
+
     /* Purchase-time snapshot of size -> style -> package selection.
        Intentionally not linked to catalog rows: later price edits or
        disabled packages must never alter historical orders. */
