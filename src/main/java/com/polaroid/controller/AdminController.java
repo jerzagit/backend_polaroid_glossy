@@ -43,6 +43,7 @@ public class AdminController {
     private final UserService userService;
     private final StatsService statsService;
     private final PrintSizeService printSizeService;
+    private final com.polaroid.service.FileService fileService;
     
     @GetMapping("/stats/overview")
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING')")
@@ -164,6 +165,15 @@ public class AdminController {
             @Valid @RequestBody VerifyPaymentRequest request,
             Authentication authentication) {
         return ResponseEntity.ok(orderService.verifyPayment(orderNumber, request, authentication.getName()));
+    }
+
+    /** Serves the receipt through a fresh, longer-lived signature so an open dashboard keeps working. */
+    @GetMapping("/orders/{orderNumber}/payment-proof")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Void> paymentProof(@PathVariable String orderNumber, Authentication authentication) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.FOUND)
+                .location(java.net.URI.create(fileService.paymentProofRedirect(orderNumber, authentication.getName())))
+                .build();
     }
     
     @GetMapping("/users")

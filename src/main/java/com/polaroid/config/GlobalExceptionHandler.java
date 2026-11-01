@@ -23,11 +23,22 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+    @ExceptionHandler(com.polaroid.exception.UploadRateLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleUploadRateLimit(com.polaroid.exception.UploadRateLimitException ex) {
+        return ResponseEntity.status(429).header("Retry-After", String.valueOf(ex.getRetryAfter()))
+                .body(Map.of("success", false, "error", ex.getMessage(), "retryAfter", ex.getRetryAfter()));
+    }
 
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleUploadTooLarge(org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
                 .body(Map.of("success", false, "message", "Upload is too large. Reduce the file size and try again."));
+    }
+
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParameter(org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("success", false, "message", "Missing required parameter: " + ex.getParameterName(), "error", "Missing required parameter: " + ex.getParameterName()));
     }
 
     @ExceptionHandler(BadCredentialsException.class)

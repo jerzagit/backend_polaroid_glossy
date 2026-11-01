@@ -24,6 +24,7 @@ public final class PaymentReviews {
         event.put("proofKey", order.getPaymentProofUrl());
         event.put("source", order.getPaymentProofSource());
         event.put("reference", order.getPaymentReference());
+        event.put("verifiedReference", order.getPaymentVerifiedReference());
         event.put("notes", notes);
         event.put("amount", order.getPaymentAmountReceived() == null ? null : order.getPaymentAmountReceived().toPlainString());
         history.add(event);

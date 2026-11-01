@@ -129,36 +129,82 @@ public class FileService {
     private static final long MAX_DECODED_MEMORY = 100 * 1024 * 1024L;
     private static final int MAX_IMAGE_DIMENSION = 10000;
     private static final Set<String> ALLOWED_FORMATS = Set.of("jpeg", "png", "webp");
-    private static final int MAX_ANONYMOUS_UPLOADS_PER_WINDOW = 10;
+    private static final int MIN_UPLOAD_ATTEMPTS_PER_WINDOW = 60;
     private static final Duration ANONYMOUS_UPLOAD_WINDOW = Duration.ofMinutes(10);
     private static final int IMAGE_URL_EXPIRATION_SECONDS = 300;
+    /** Admin receipt reviews outlive the 5-minute image URLs; those are signed on demand for longer. */
+    private static final int PAYMENT_PROOF_URL_EXPIRATION_SECONDS = 900;
 
     private final Map<String, UploadWindow> anonymousUploadWindows = new ConcurrentHashMap<>();
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> uploadFile(MultipartFile file, String orderId, String orderItemId, String customerEmail, String userEmail) throws IOException {
-        Order order = findAuthorizedOrder(orderId, userEmail);
-        validateCustomerEmailMatches(order, customerEmail);
-        validateOrderAcceptsUpload(order);
-        return storeFile(file, order, orderItemId);
+        return uploadPhoto(file, orderId, orderItemId, customerEmail, userEmail, null, null, null);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> uploadFileForOrder(MultipartFile file, String orderId, String orderItemId, String customerEmail, String uploadToken, String clientIp) throws IOException {
-        Order order = findOrder(orderId);
-        validateAnonymousUploadAllowed(order, customerEmail, uploadToken, clientIp);
-        return storeFile(file, order, orderItemId);
+        return uploadPhoto(file, orderId, orderItemId, customerEmail, null, uploadToken, clientIp, null);
     }
 
-    @Transactional
+    @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> uploadWithId(MultipartFile file, String orderId, String orderItemId, String customerEmail, String userEmail, String photoId) throws IOException {
-        if (photoId == null || !photoId.matches("[a-zA-Z0-9-]{1,64}")) throw new BadRequestException("Invalid photo ID");
-        if (orderItemId == null || orderItemId.isBlank()) throw new BadRequestException("Order item is required");
-        Order order = findAuthorizedOrder(orderId, userEmail);
-        orderRepository.lockById(order.getId()).orElseThrow();
+        return uploadPhoto(file, orderId, orderItemId, customerEmail, userEmail, null, null, photoId);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Map<String, Object> uploadPhoto(MultipartFile file, String orderId, String orderItemId, String customerEmail,
+            String userEmail, String uploadToken, String clientIp, String photoId) throws IOException {
+        if (photoId != null && !photoId.matches("[a-zA-Z0-9-]{1,64}")) throw new BadRequestException("Invalid photo ID");
+        if (photoId != null && (orderItemId == null || orderItemId.isBlank())) throw new BadRequestException("Order item is required");
+        // Always lock the order first, before loading items; consistent lock order prevents lost updates/deadlocks.
+        Order order = findLockedOrder(orderId);
+        authorizeUploadOrder(order, userEmail, uploadToken);
         validateCustomerEmailMatches(order, customerEmail);
         validateOrderAcceptsUpload(order);
+        enforceAnonymousUploadRateLimit(order, clientIp);
         return storeFile(file, order, orderItemId, photoId);
+    }
+
+    private Order findLockedOrder(String orderId) {
+        try { return orderRepository.lockById(UUID.fromString(orderId)).orElseThrow(() -> new ResourceNotFoundException("Order not found")); }
+        catch (IllegalArgumentException e) { return orderRepository.lockByOrderNumber(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found")); }
+    }
+
+    private void authorizeUploadOrder(Order order, String userEmail, String uploadToken) {
+        if (userEmail == null) { validateGuestUploadToken(order, uploadToken); return; }
+        User user = userRepository.findByEmail(userEmail).orElseThrow(() -> new ForbiddenException("User not found"));
+        if (!isStaff(user.getRole()) && !user.getId().equals(order.getUserId()) && !userEmail.equalsIgnoreCase(order.getCustomerEmail()))
+            throw new ForbiddenException("Not authorized to access uploads for this order");
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> uploadStatus(String orderId, String customerEmail, String userEmail, String uploadToken) {
+        Order order = findOrder(orderId);
+        authorizeUploadOrder(order, userEmail, uploadToken);
+        validateCustomerEmailMatches(order, customerEmail);
+        List<Map<String, Object>> items = new ArrayList<>();
+        for (OrderItem item : order.getItems()) {
+            boolean strip = StripDesigns.isStrip(item.getSizeId());
+            var state = strip ? StripDesigns.read(item, objectMapper) : null;
+            int expected = strip ? (state == null ? 0 : state.getAssets().size()) : expectedImageCount(item);
+            int saved = strip ? (state == null ? 0 : StripDesigns.uploaded(state)) : readJsonStringList(item.getS3Keys()).size();
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("orderItemId", item.getId().toString()); row.put("kind", strip ? "strip" : "photo");
+            row.put("expectedImageCount", expected); row.put("uploadedImageCount", saved);
+            row.put("remainingImageCount", Math.max(0, expected - saved));
+            row.put("uploadedPhotoIds", savedPhotoIds(item));
+            row.put("complete", strip ? StripDesigns.ready(item, objectMapper) : expected > 0 && saved >= expected);
+            items.add(row);
+        }
+        return Map.of("success", true, "orderNumber", order.getOrderNumber(), "complete",
+                !items.isEmpty() && items.stream().allMatch(i -> Boolean.TRUE.equals(i.get("complete"))), "items", items);
+    }
+
+    private List<String> savedPhotoIds(OrderItem item) {
+        String prefix = "orders/" + item.getOrder().getOrderNumber() + "/" + item.getId() + "/upload-";
+        return readJsonStringList(item.getS3Keys()).stream().filter(k -> k.startsWith(prefix) && k.lastIndexOf('.') > prefix.length())
+                .map(k -> k.substring(prefix.length(), k.lastIndexOf('.'))).distinct().toList();
     }
 
     @Transactional
@@ -207,8 +253,18 @@ public class FileService {
         return result;
     }
 
-    private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId) throws IOException {
-        return storeFile(file, order, orderItemId, null);
+    /**
+     * A dashboard left open outlives the 5-minute image URLs, so the seller's receipt is served
+     * through a redirect that signs a fresh, longer-lived URL on demand.
+     */
+    @Transactional(readOnly = true)
+    public String paymentProofRedirect(String orderId, String adminEmail) {
+        User admin = userRepository.findByEmail(adminEmail).orElseThrow(() -> new ForbiddenException("Admin access required"));
+        if (admin.getRole() != Role.ADMIN) throw new ForbiddenException("Only admins can view payment proofs");
+        Order order = findOrder(orderId);
+        if (order.getPaymentProofUrl() == null || order.getPaymentProofUrl().isBlank())
+            throw new ResourceNotFoundException("This order has no payment proof");
+        return storageService.getSignedUrl(order.getPaymentProofUrl(), PAYMENT_PROOF_URL_EXPIRATION_SECONDS);
     }
 
     private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId, String photoId) throws IOException {
@@ -217,7 +273,7 @@ public class FileService {
         if (photoId != null) {
             String prefix = "orders/" + order.getOrderNumber() + "/" + item.getId() + "/upload-" + photoId + ".";
             var existing = readJsonStringList(item.getS3Keys()).stream().filter(key -> key.startsWith(prefix)).findFirst();
-            if (existing.isPresent()) return Map.of("url", storageService.getSignedUrl(existing.get(), IMAGE_URL_EXPIRATION_SECONDS), "photoId", photoId);
+            if (existing.isPresent()) return uploadResult(item, existing.get(), photoId, true);
         }
         enforceUploadCapacity(item);
 
@@ -233,27 +289,25 @@ public class FileService {
         try {
             String contentType = isJpeg ? "image/jpeg" : "image/png";
             storageService.upload(key, processedImage, contentType);
-            String signedUrl = storageService.getSignedUrl(key, IMAGE_URL_EXPIRATION_SECONDS);
-
             persistUploadedFile(item, key);
-            invalidateUploadTokenIfComplete(order);
-
-            int uploadedCount = readJsonStringList(item.getS3Keys()).size();
-            int expectedCount = expectedImageCount(item);
-
-            Map<String, Object> result = new HashMap<>();
-            result.put("url", signedUrl);
-            result.put("fileName", fileName);
-            result.put("orderItemId", item.getId().toString());
-            result.put("uploadedImageCount", uploadedCount);
-            result.put("expectedImageCount", expectedCount);
-            result.put("remainingImageCount", Math.max(0, expectedCount - uploadedCount));
-
-            return result;
+            reconcileCompletedUploads(order);
+            return uploadResult(item, key, photoId, false);
         } catch (Exception e) {
-            log.error("Failed to upload file: {}", e.getMessage());
-            throw new IOException("Failed to upload file: " + e.getMessage());
+            log.warn("Photo upload failed order={} item={} photo={} cause={}", order.getId(), item.getId(), photoId, e.getClass().getSimpleName());
+            // Stable keys make retry safe even if storage succeeded before the transaction rolled back.
+            throw new IOException("Photo could not be saved. Please retry.", e);
         }
+    }
+
+    private Map<String, Object> uploadResult(OrderItem item, String key, String photoId, boolean alreadyUploaded) {
+        int saved = readJsonStringList(item.getS3Keys()).size(), expected = expectedImageCount(item);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("url", storageService.getSignedUrl(key, IMAGE_URL_EXPIRATION_SECONDS));
+        result.put("photoId", photoId); result.put("alreadyUploaded", alreadyUploaded);
+        result.put("orderItemId", item.getId().toString()); result.put("fileName", key.substring(key.lastIndexOf('/') + 1));
+        result.put("uploadedImageCount", saved); result.put("expectedImageCount", expected);
+        result.put("remainingImageCount", Math.max(0, expected - saved));
+        return result;
     }
 
     private void persistUploadedFile(OrderItem item, String key) {
@@ -298,14 +352,6 @@ public class FileService {
         }
     }
 
-    private void validateAnonymousUploadAllowed(Order order, String customerEmail, String uploadToken, String clientIp) {
-        validateOrderAcceptsUpload(order);
-        validateCustomerEmailMatches(order, customerEmail);
-        validateGuestUploadToken(order, uploadToken);
-
-        enforceAnonymousUploadRateLimit(order, clientIp);
-    }
-
     private void validateCustomerEmailMatches(Order order, String customerEmail) {
         if (customerEmail == null || customerEmail.isBlank()
                 || !customerEmail.equalsIgnoreCase(order.getCustomerEmail())) {
@@ -331,7 +377,8 @@ public class FileService {
     }
 
     private void validateOrderAcceptsUpload(Order order) {
-        if (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.PROCESSING) {
+        if ((order.getStatus() != OrderStatus.DRAFT && order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.PROCESSING)
+                || (order.getExpiresAt() != null && order.getExpiresAt().isBefore(LocalDateTime.now()))) {
             throw new UploadConflictException("Order is not open for uploads");
         }
         if (order.getPaymentStatus() == PaymentStatus.FAILED
@@ -342,8 +389,10 @@ public class FileService {
     }
 
     private void enforceAnonymousUploadRateLimit(Order order, String clientIp) {
-        String normalizedIp = clientIp == null || clientIp.isBlank() ? "unknown" : clientIp.trim();
-        String key = normalizedIp + ":" + order.getOrderNumber();
+        // Per-authorized-order budget, independent of spoofable IP headers. Database capacity remains authoritative.
+        String key = order.getId().toString();
+        long expected = order.getItems().stream().mapToLong(this::expectedImageCount).sum();
+        long budget = Math.max(MIN_UPLOAD_ATTEMPTS_PER_WINDOW, Math.min(10_000L, expected * 5L));
         LocalDateTime now = LocalDateTime.now();
         UploadWindow window = anonymousUploadWindows.computeIfAbsent(key, ignored -> new UploadWindow(now));
 
@@ -352,8 +401,9 @@ public class FileService {
                 window.windowStartedAt = now;
                 window.count = 0;
             }
-            if (window.count >= MAX_ANONYMOUS_UPLOADS_PER_WINDOW) {
-                throw new BadRequestException("Too many upload attempts. Please try again later");
+            if (window.count >= budget) {
+                int retryAfter = (int) Math.max(1, Duration.between(now, window.windowStartedAt.plus(ANONYMOUS_UPLOAD_WINDOW)).getSeconds());
+                throw new com.polaroid.exception.UploadRateLimitException(retryAfter);
             }
             window.count++;
         }
@@ -364,7 +414,7 @@ public class FileService {
         }
     }
 
-    private void invalidateUploadTokenIfComplete(Order order) {
+    private void reconcileCompletedUploads(Order order) {
         List<OrderItem> items = orderItemRepository.findByOrderIdForUpdate(order.getId());
         boolean complete = !items.isEmpty() && items.stream().allMatch(item -> {
             int expectedImageCount = expectedImageCount(item);
@@ -373,8 +423,7 @@ public class FileService {
 
         if (complete) {
             Fulfillment.reconcile(order, objectMapper);
-            order.setUploadTokenHash(null);
-            order.setUploadTokenExpiresAt(null);
+            // Retain the scoped, expiring credential so a lost final response can be reconciled/replayed.
             orderRepository.save(order);
         }
     }
@@ -398,7 +447,7 @@ public class FileService {
                 values = objectMapper.readValue(json, new TypeReference<List<String>>() {});
             }
         } catch (Exception e) {
-            values = new ArrayList<>();
+            throw new IllegalStateException("Stored photo metadata is invalid; refusing to overwrite it", e);
         }
 
         values.add(value);

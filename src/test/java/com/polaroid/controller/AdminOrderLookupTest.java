@@ -27,7 +27,7 @@ class AdminOrderLookupTest {
         when(storage.getSignedUrl("payment-proofs/receipt.png", 300)).thenReturn("https://example.test/receipt.png");
         var mapper = new OrderMapper(new ObjectMapper(), storage);
         var service = new OrderService(repository, null, null, null, null, mapper, null, new ObjectMapper(), null);
-        var mvc = MockMvcBuilders.standaloneSetup(new AdminController(service, null, null, null)).build();
+        var mvc = MockMvcBuilders.standaloneSetup(new AdminController(service, null, null, null, null)).build();
 
         mvc.perform(get("/api/admin/orders/{id}", id))
                 .andExpect(status().isOk())

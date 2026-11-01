@@ -63,7 +63,7 @@ class FileServiceFulfillmentTest {
         Order order = order(orderId, userId, OrderStatus.PENDING, PaymentStatus.PENDING);
         OrderItem item = item(itemId, order, 3, "[\"orders/old/item/photo.jpg\"]");
 
-        when(orderRepository.findByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
+        when(orderRepository.lockByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
         when(userRepository.findByEmail(CUSTOMER_EMAIL)).thenReturn(Optional.of(user(userId, CUSTOMER_EMAIL)));
         when(orderItemRepository.findByOrderIdAndIdForUpdate(orderId, itemId)).thenReturn(Optional.of(item));
         when(orderItemRepository.findByOrderIdForUpdate(orderId)).thenReturn(java.util.List.of(item));
@@ -91,7 +91,7 @@ class FileServiceFulfillmentTest {
         Order order = order(orderId, null, OrderStatus.PROCESSING, PaymentStatus.PAID);
         OrderItem item = item(itemId, order, 1, "[]");
 
-        when(orderRepository.findByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
+        when(orderRepository.lockByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
         when(userRepository.findByEmail(CUSTOMER_EMAIL)).thenReturn(Optional.of(user(userId, CUSTOMER_EMAIL)));
         when(orderItemRepository.findByOrderIdAndIdForUpdate(orderId, itemId)).thenReturn(Optional.of(item));
         when(orderItemRepository.findByOrderIdForUpdate(orderId)).thenReturn(java.util.List.of(item));
@@ -113,7 +113,7 @@ class FileServiceFulfillmentTest {
         UUID userId = UUID.randomUUID();
         Order order = order(UUID.randomUUID(), userId, OrderStatus.DELIVERED, PaymentStatus.PAID);
 
-        when(orderRepository.findByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
+        when(orderRepository.lockByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
         when(userRepository.findByEmail(CUSTOMER_EMAIL)).thenReturn(Optional.of(user(userId, CUSTOMER_EMAIL)));
 
         UploadConflictException ex = assertThrows(UploadConflictException.class, () ->
@@ -130,7 +130,7 @@ class FileServiceFulfillmentTest {
         Order order = order(orderId, userId, OrderStatus.PENDING, PaymentStatus.PENDING);
         OrderItem item = item(itemId, order, 2, "[\"a\",\"b\"]");
 
-        when(orderRepository.findByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
+        when(orderRepository.lockByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
         when(userRepository.findByEmail(CUSTOMER_EMAIL)).thenReturn(Optional.of(user(userId, CUSTOMER_EMAIL)));
         when(orderItemRepository.findByOrderIdAndIdForUpdate(orderId, itemId)).thenReturn(Optional.of(item));
 

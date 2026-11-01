@@ -14,6 +14,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Component
@@ -66,7 +67,9 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
                 .paymentReviewStatus(entity.getPaymentReviewStatus())
                 .paymentVerifiedBy(entity.getPaymentVerifiedBy())
                 .paymentVerifiedAt(entity.getPaymentVerifiedAt())
+                .paymentVerifiedReference(entity.getPaymentVerifiedReference())
                 .paymentAmountReceived(entity.getPaymentAmountReceived())
+                .paymentReviewHistory(paymentReviewHistory(entity))
                 .photosComplete(com.polaroid.service.Fulfillment.photosComplete(entity, objectMapper))
                 .toyyibpayRef(entity.getToyyibpayRef())
                 .subtotal(entity.getSubtotal())
@@ -167,6 +170,19 @@ public class OrderMapper implements EntityMapper<Order, OrderResponse> {
             return keyOrUrl;
         }
         return storageService.getSignedUrl(keyOrUrl, IMAGE_URL_EXPIRATION_SECONDS);
+    }
+
+    /**
+     * Review history is audit data. An unreadable value must not break the admin order list,
+     * so it degrades to empty and is logged rather than failing the whole response.
+     */
+    private List<Map<String, String>> paymentReviewHistory(Order entity) {
+        try {
+            return com.polaroid.service.PaymentReviews.read(entity, objectMapper);
+        } catch (Exception e) {
+            log.warn("Payment review history unreadable for order {}: {}", entity.getOrderNumber(), e.getMessage());
+            return List.of();
+        }
     }
 
     private List<String> readJsonStringList(String json) {
