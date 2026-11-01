@@ -46,6 +46,11 @@ public class OrderResponse {
     private LocalDateTime deliveredAt;
     private LocalDateTime cancelledAt;
     private String cancelReason;
+    private LocalDateTime reopenedAt;
+    private String reopenedBy;
+    private Integer reopenCount;
+    private LocalDateTime filesDeleteAfter;
+    private LocalDateTime filesDeletedAt;
     private String notes;
     private String uploadToken;
     private LocalDateTime expiresAt;

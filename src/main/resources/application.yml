@@ -46,6 +46,13 @@ app:
   setup-admin:
     enabled: ${SETUP_ADMIN_ENABLED:false}
     secret: ${SETUP_ADMIN_SECRET:}
+  retention:
+    enabled: ${FILE_RETENTION_ENABLED:true}
+    cancelled-days: ${FILE_RETENTION_CANCELLED_DAYS:5}
+    fulfilled-days: ${FILE_RETENTION_FULFILLED_DAYS:14}
+    cleanup-cron: ${FILE_RETENTION_CLEANUP_CRON:0 15 * * * *}
+    batch-size: ${FILE_RETENTION_BATCH_SIZE:50}
+    dry-run: ${FILE_RETENTION_DRY_RUN:false}
 
 toyyibpay:
   secret-key: ${TOYYIBPAY_SECRET_KEY:your-secret-key}

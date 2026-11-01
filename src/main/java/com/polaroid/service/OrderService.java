@@ -61,6 +61,12 @@ public class OrderService {
 
     @Value("${app.draft.expiration-hours:24}")
     private int draftExpirationHours;
+
+    @Value("${app.retention.cancelled-days:5}")
+    private int cancelledRetentionDays;
+
+    @Value("${app.retention.fulfilled-days:14}")
+    private int fulfilledRetentionDays;
     
     @Transactional
     public OrderResponse createOrder(OrderRequest request, String userEmail) {
@@ -222,6 +228,7 @@ public class OrderService {
             if (!PaymentCleanupService.awaitingPayment(order)) continue;
             order.setStatus(OrderStatus.EXPIRED);
             order.setDraftExpiredAt(LocalDateTime.now());
+            applyCancellationRetention(order);
             orderRepository.save(order);
             addStatusHistory(order, OrderStatus.EXPIRED, "Draft expired without payment");
         }
@@ -266,11 +273,17 @@ public class OrderService {
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
         
         orderRepository.lockById(order.getId()).orElseThrow();
+        OrderStatus oldStatus = order.getStatus();
+        if ((oldStatus == OrderStatus.CANCELLED || oldStatus == OrderStatus.EXPIRED)
+                && newStatus != OrderStatus.CANCELLED
+                && newStatus != OrderStatus.EXPIRED
+                && newStatus != OrderStatus.REFUNDED) {
+            throw new BadRequestException("Use the reopen order action to move a cancelled or expired order back to an active status");
+        }
         if (java.util.Set.of(OrderStatus.PROCESSING, OrderStatus.POSTED, OrderStatus.ON_DELIVERY, OrderStatus.DELIVERED).contains(newStatus)
                 && !Fulfillment.ready(order, objectMapper)) {
             throw new BadRequestException("Payment and all required photos must be complete before processing");
         }
-        OrderStatus oldStatus = order.getStatus();
         order.setStatus(newStatus);
         
         switch (newStatus) {
@@ -278,16 +291,26 @@ public class OrderService {
             case POSTED -> {
                 order.setShippedAt(LocalDateTime.now());
                 addStatusHistory(order, OrderStatus.POSTED, message != null ? message : "Order posted");
+                applyFulfillmentRetention(order, newStatus);
             }
-            case ON_DELIVERY -> addStatusHistory(order, OrderStatus.ON_DELIVERY, message != null ? message : "Out for delivery");
+            case ON_DELIVERY -> {
+                addStatusHistory(order, OrderStatus.ON_DELIVERY, message != null ? message : "Out for delivery");
+                applyFulfillmentRetention(order, newStatus);
+            }
             case DELIVERED -> {
                 order.setDeliveredAt(LocalDateTime.now());
                 addStatusHistory(order, OrderStatus.DELIVERED, message != null ? message : "Order delivered");
+                applyFulfillmentRetention(order, newStatus);
             }
             case CANCELLED -> {
                 order.setCancelledAt(LocalDateTime.now());
                 order.setCancelReason(message);
                 addStatusHistory(order, OrderStatus.CANCELLED, message != null ? message : "Order cancelled");
+                applyCancellationRetention(order);
+            }
+            case REFUNDED -> {
+                addStatusHistory(order, OrderStatus.REFUNDED, message != null ? message : "Order refunded");
+                applyCancellationRetention(order);
             }
             default -> addStatusHistory(order, newStatus, message);
         }
@@ -332,6 +355,7 @@ public class OrderService {
         Fulfillment.reconcile(order, objectMapper);
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
+            pauseRetentionForPaidCancellation(order);
             if (order.getStatus() == OrderStatus.DRAFT) {
                 order.setStatus(OrderStatus.PENDING);
                 order.setExpiresAt(null);
@@ -360,6 +384,7 @@ public class OrderService {
         Fulfillment.reconcile(order, objectMapper);
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
+            pauseRetentionForPaidCancellation(order);
             addStatusHistory(order, order.getStatus(), "Payment confirmed by admin");
             if (!alreadyPaid) {
                 emailService.sendPaymentConfirmation(order);
@@ -385,6 +410,7 @@ public class OrderService {
         Fulfillment.reconcile(order, objectMapper);
         if (status == PaymentStatus.PAID) {
             order.setPaidAt(LocalDateTime.now());
+            pauseRetentionForPaidCancellation(order);
         }
         addStatusHistory(order, order.getStatus(), message);
 
@@ -405,6 +431,7 @@ public class OrderService {
                 order.setPaymentStatus(PaymentStatus.PAID);
                 Fulfillment.reconcile(order, objectMapper);
                 order.setPaidAt(LocalDateTime.now());
+                pauseRetentionForPaidCancellation(order);
                 addStatusHistory(order, order.getStatus(), "Payment verified and approved by " + adminEmail);
                 if (approvedFromUnpaid) {
                     emailService.sendPaymentConfirmation(order);
@@ -684,8 +711,154 @@ public class OrderService {
         order.setCancelledAt(LocalDateTime.now());
         order.setCancelReason("Cancelled by customer");
         addStatusHistory(order, OrderStatus.CANCELLED, "Order cancelled by customer");
+        applyCancellationRetention(order);
 
         return orderMapper.toDto(orderRepository.save(order));
+    }
+
+    /**
+     * Reopens a cancelled or expired order so the customer can pay/upload again.
+     * The previous cancellation is retained in status history; the order itself
+     * returns to the normal PENDING lifecycle.
+     */
+    @Transactional
+    public OrderResponse reopenOrder(UUID orderId, String reason, boolean paymentReceived, String adminEmail) {
+        Order order = orderRepository.lockById(orderId)
+                .orElseThrow(() -> new ResourceNotFoundException("Order not found"));
+
+        if (order.getStatus() != OrderStatus.CANCELLED && order.getStatus() != OrderStatus.EXPIRED) {
+            throw new BadRequestException("Only cancelled or expired orders can be reopened");
+        }
+        if (reason == null || reason.isBlank()) {
+            throw new BadRequestException("A reason is required to reopen an order");
+        }
+
+        LocalDateTime now = LocalDateTime.now();
+        boolean filesPurged = order.getFilesDeletedAt() != null
+                || order.getFilesDeleteError() != null
+                || (order.getFilesDeleteAttempts() != null && order.getFilesDeleteAttempts() > 0);
+        boolean alreadyPaid = order.getPaymentStatus() == PaymentStatus.PAID;
+
+        order.setStatus(OrderStatus.PENDING);
+        order.setCancelledAt(null);
+        order.setCancelReason(null);
+        order.setDraftExpiredAt(null);
+        order.setExpiresAt(null);
+        order.setFilesDeleteAfter(null);
+        order.setFilesDeletedAt(null);
+        order.setFilesDeleteError(null);
+        order.setFilesDeleteAttempts(0);
+        order.setPaymentReminderSentAt(null);
+        order.setUploadReminderSentAt(null);
+        order.setReopenedAt(now);
+        order.setReopenedBy(adminEmail);
+        order.setReopenCount(order.getReopenCount() == null ? 1 : order.getReopenCount() + 1);
+
+        if (filesPurged) {
+            resetFileMetadata(order);
+        }
+        String newUploadToken = ensureUploadToken(order, now);
+
+        String message = "Reopened by admin: " + reason.trim();
+        if (filesPurged) {
+            message += " (previous files may have been deleted)";
+        }
+        if (!paymentReceived && (order.getPaymentStatus() == PaymentStatus.FAILED
+                || order.getPaymentStatus() == PaymentStatus.CANCELLED
+                || order.getPaymentStatus() == PaymentStatus.REFUNDED)) {
+            order.setPaymentStatus(PaymentStatus.PENDING);
+            order.setPaidAt(null);
+        }
+        if (paymentReceived && !alreadyPaid) {
+            order.setPaymentStatus(PaymentStatus.PAID);
+            if (order.getPaidAt() == null) {
+                order.setPaidAt(now);
+            }
+            message += " (payment received)";
+        }
+        addStatusHistory(order, OrderStatus.PENDING, message);
+
+        Order saved = orderRepository.save(order);
+        if (paymentReceived && !alreadyPaid && emailService != null) {
+            emailService.sendPaymentConfirmation(saved);
+        }
+
+        OrderResponse response = orderMapper.toDto(saved);
+        response.setUploadToken(newUploadToken);
+        return response;
+    }
+
+    private void pauseRetentionForPaidCancellation(Order order) {
+        if (order.getStatus() == OrderStatus.CANCELLED || order.getStatus() == OrderStatus.EXPIRED) {
+            order.setFilesDeleteAfter(null);
+        }
+    }
+
+    public void applyCancellationRetention(Order order) {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime base = order.getStatus() == OrderStatus.REFUNDED
+                ? now
+                : (order.getCancelledAt() != null ? order.getCancelledAt() : now);
+        boolean shipped = order.getShippedAt() != null || order.getDeliveredAt() != null;
+        int days = shipped ? fulfilledRetentionDays : cancelledRetentionDays;
+        order.setFilesDeleteAfter(base.plusDays(days));
+    }
+
+    public void applyFulfillmentRetention(Order order, OrderStatus status) {
+        LocalDateTime now = LocalDateTime.now();
+        if (status == OrderStatus.DELIVERED) {
+            LocalDateTime delivered = order.getDeliveredAt() != null ? order.getDeliveredAt() : now;
+            order.setFilesDeleteAfter(delivered.plusDays(fulfilledRetentionDays));
+        } else if (status == OrderStatus.POSTED || status == OrderStatus.ON_DELIVERY) {
+            if (order.getFilesDeleteAfter() == null) {
+                order.setFilesDeleteAfter(now.plusDays(fulfilledRetentionDays));
+            }
+        }
+    }
+
+    private String ensureUploadToken(Order order, LocalDateTime now) {
+        if (order.getUserId() != null) {
+            return null;
+        }
+        if (order.getUploadTokenHash() != null
+                && order.getUploadTokenExpiresAt() != null
+                && order.getUploadTokenExpiresAt().isAfter(now)) {
+            return null;
+        }
+        String token = generateUploadToken();
+        order.setUploadTokenHash(hashUploadToken(token));
+        order.setUploadTokenExpiresAt(now.plusHours(uploadTokenExpirationHours));
+        return token;
+    }
+
+    private void resetFileMetadata(Order order) {
+        if (order.getItems() == null) {
+            return;
+        }
+        for (OrderItem item : order.getItems()) {
+            item.setS3Keys("[]");
+            item.setImages("[]");
+            if (StripDesigns.isStrip(item.getSizeId()) && item.getStripDesign() != null) {
+                try {
+                    StripDesignState state = StripDesigns.read(item, objectMapper);
+                    if (state != null && state.getAssets() != null) {
+                        for (StripDesignState.Asset asset : state.getAssets()) {
+                            asset.setStatus("pending");
+                            asset.setStorageKey(null);
+                            asset.setSha256(null);
+                            asset.setMimeType(null);
+                            asset.setWidth(null);
+                            asset.setHeight(null);
+                            asset.setOriginalFilename(null);
+                        }
+                        StripDesigns.write(item, state, objectMapper);
+                    }
+                } catch (Exception e) {
+                    log.warn("Could not reset strip assets for reopened order {}: {}",
+                            order.getOrderNumber(), e.getMessage());
+                }
+            }
+        }
     }
 
     public Order getAuthorizedOrder(String orderNumber, String requesterEmail) {

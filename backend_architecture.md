@@ -170,6 +170,11 @@ Design rules that matter:
 - Cancellation (`DELETE /api/orders?orderId=`) accepts an order id or order number, requires
   the owner or staff, and currently does not guard on status — a paid order can be
   cancelled without a refund step. Treat it as staff tooling.
+- Reopening (`POST /api/admin/orders/{id}/reopen`, ADMIN/MARKETING) moves a `CANCELLED`
+  or `EXPIRED` order back to `PENDING`. It records `reopenedAt`, `reopenedBy`,
+  `reopenCount` and a status-history entry; the normal status endpoint rejects
+  `CANCELLED/EXPIRED -> PENDING`. If files were already purged, reopening resets the
+  item file metadata so the customer can upload again.
 - `GET /api/orders/my` returns the caller's orders with pagination; `GET /api/orders/{n}`
   requires owner JWT, matching `?email=`, or staff.
 
@@ -215,6 +220,12 @@ methods return a boolean so the job can leave the "reminder sent" timestamp unse
   - strip assets `orders/{orderId}/assets/{assetId}/original.{ext}`
   - payment proofs `payment-proofs/{orderNumber}/{uuid}.jpg|.png`
   - catalog images `catalog/{productId}/{uuid}.png`
+- Retention: `FileRetentionService` deletes only `orders/` objects (customer photos and
+  strip assets), never `payment-proofs/` or catalog images. Cancelled/expired orders keep
+  files for 5 days before shipping and 14 days after a shipping milestone; orders keep
+  files for 14 days from the first `POSTED`/`ON_DELIVERY` milestone, resetting to 14 days
+  after `DELIVERED`. Order rows and metadata are never deleted.
+  `FILE_RETENTION_DRY_RUN=true` logs only.
 - Reads never use public object URLs: `getSignedUrl` presigns for 300 seconds (FileService,
   OrderMapper and R2 defaults all use 300).
 - Validation: ≤ 25 MB, magic-byte JPEG/PNG/WebP, re-encoded server-side (strips EXIF),
@@ -274,9 +285,12 @@ Open security gaps (deliberately documented, not fixed in this documentation pas
 | `DraftCleanupService.cleanupExpiredDrafts` | 10 min | `DRAFT` past `expiresAt` → `EXPIRED` + history |
 | `PaymentCleanupService.cleanupExpiredPayments` | 1 h | Unpaid orders past `PAYMENT_EXPIRATION_HOURS` → expire |
 | `PaymentCleanupService.remindMissingPhotos` | 1 h | Email payment/upload reminders past `PAYMENT_REMINDER_HOURS` |
+| `FileRetentionService.purgeDueOrderFiles` | hourly at :15 | Delete eligible R2/S3 objects after the retention window; keep order rows and payment proofs |
 
-Jobs run inside the app process, so with two Fly machines each job runs twice per interval;
-the operations are idempotent by state check but not coordinated by a lock.
+Jobs run inside the app process, so with two Fly machines each job runs twice per interval.
+State checks make the operations idempotent; `FileRetentionService` additionally selects
+due rows with `PESSIMISTIC_WRITE` locks so the two machines do not delete the same order
+concurrently.
 
 ## 13. Configuration and profiles
 
@@ -291,6 +305,7 @@ the operations are idempotent by state check but not coordinated by a lock.
 | Payments | mock enabled | ToyyibPay, `TOYYIBPAY_VERIFY_CALLBACK=true` |
 | Mail | `localhost:1025`, no auth | `SPRING_MAIL_*`, STARTTLS |
 | Setup admin | enabled (`admin-secret-2024`) | disabled |
+| File retention | defaults (5/14 days, hourly at :15) | `FILE_RETENTION_*` env vars |
 | Logging | `com.polaroid: DEBUG` | `WARN` |
 | Public URL | – | `PUBLIC_API_URL` (image URLs are built from it), `FRONTEND_URL` |
 

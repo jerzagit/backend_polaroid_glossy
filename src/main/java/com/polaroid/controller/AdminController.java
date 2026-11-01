@@ -2,6 +2,7 @@ package com.polaroid.controller;
 
 import com.polaroid.dto.request.OrderStatusUpdateRequest;
 import com.polaroid.dto.request.PrintSizeRequest;
+import com.polaroid.dto.request.ReopenOrderRequest;
 import com.polaroid.dto.request.UpdatePaymentStatusRequest;
 import com.polaroid.dto.request.UserRoleUpdateRequest;
 import com.polaroid.dto.request.VerifyPaymentRequest;
@@ -116,6 +117,16 @@ public class AdminController {
         
         return ResponseEntity.ok(orderService.updateOrderStatus(
                 id, request.getStatus(), request.getMessage(), authentication.getName()));
+    }
+
+    @PostMapping("/orders/{id}/reopen")
+    @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING')")
+    public ResponseEntity<OrderResponse> reopenOrder(
+            @PathVariable UUID id,
+            @Valid @RequestBody ReopenOrderRequest request,
+            Authentication authentication) {
+        return ResponseEntity.ok(orderService.reopenOrder(
+                id, request.getReason(), request.isPaymentReceived(), authentication.getName()));
     }
     
     @PatchMapping("/orders/{id}/tracking")

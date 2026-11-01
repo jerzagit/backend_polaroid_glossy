@@ -1,7 +1,6 @@
 package com.polaroid.service;
 
 import com.polaroid.model.Order;
-import com.polaroid.model.OrderItem;
 import com.polaroid.model.enums.OrderStatus;
 import com.polaroid.model.enums.PaymentStatus;
 import com.polaroid.repository.OrderRepository;
@@ -12,9 +11,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.io.IOException;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -23,7 +20,6 @@ import java.util.List;
 public class PaymentCleanupService {
 
     private final OrderRepository orderRepository;
-    private final FileService fileService;
     private final OrderService orderService;
     private final EmailService emailService;
 
@@ -45,11 +41,13 @@ public class PaymentCleanupService {
 
         for (Order order : expiredOrders) {
             if (!awaitingPayment(order)) continue;
+            // A reopened order gets a fresh payment window; createdAt is unchanged.
+            if (order.getReopenedAt() != null && order.getReopenedAt().isAfter(expirationThreshold)) continue;
             try {
-                deleteOrderFiles(order);
                 order.setStatus(OrderStatus.CANCELLED);
                 order.setCancelledAt(LocalDateTime.now());
                 order.setCancelReason("Auto-cancelled: payment not received within " + expirationHours + " hours");
+                orderService.applyCancellationRetention(order);
                 orderRepository.save(order);
                 log.info("Auto-cancelled unpaid order {} (created {})", order.getOrderNumber(), order.getCreatedAt());
             } catch (Exception e) {
@@ -61,9 +59,13 @@ public class PaymentCleanupService {
                 PaymentStatus.PENDING, reminderThreshold);
 
         for (Order order : reminderOrders) {
-            if (awaitingPayment(order) && order.getPaymentReminderSentAt() == null && order.getCreatedAt().isAfter(expirationThreshold)) {
+            LocalDateTime effectiveCreatedAt = effectiveCreatedAt(order);
+            if (awaitingPayment(order)
+                    && order.getPaymentReminderSentAt() == null
+                    && effectiveCreatedAt.isAfter(expirationThreshold)
+                    && !effectiveCreatedAt.isAfter(reminderThreshold)) {
                 log.info("Payment reminder needed for order {} (created {}, customer {})",
-                        order.getOrderNumber(), order.getCreatedAt(), order.getCustomerEmail());
+                        order.getOrderNumber(), effectiveCreatedAt, order.getCustomerEmail());
                 if (emailService.sendPaymentReminder(order)) {
                     order.setPaymentReminderSentAt(now);
                     orderRepository.save(order);
@@ -93,45 +95,13 @@ public class PaymentCleanupService {
                 && (order.getPaymentProofUrl() == null || order.getPaymentProofUrl().isBlank());
     }
 
-    private void deleteOrderFiles(Order order) {
-        List<String> keys = new ArrayList<>();
-        if (order.getItems() != null) {
-            for (OrderItem item : order.getItems()) {
-                try {
-                    List<String> itemKeys = parseJsonList(item.getS3Keys());
-                    keys.addAll(itemKeys);
-                } catch (Exception e) {
-                    log.warn("Failed to parse s3Keys for item {}: {}", item.getId(), e.getMessage());
-                }
-            }
-        }
-
-        for (String key : keys) {
-            try {
-                fileService.deleteFile(key);
-            } catch (IOException e) {
-                log.warn("Failed to delete file {} for cancelled order {}: {}", key, order.getOrderNumber(), e.getMessage());
-            }
-        }
+    private LocalDateTime effectiveCreatedAt(Order order) {
+        return order.getReopenedAt() != null && order.getReopenedAt().isAfter(order.getCreatedAt())
+                ? order.getReopenedAt()
+                : order.getCreatedAt();
     }
 
     private void sendPaymentReminder(Order order) {
         emailService.sendPaymentReminder(order);
-    }
-
-    private List<String> parseJsonList(String json) {
-        if (json == null || json.isBlank()) return List.of();
-        String trimmed = json.trim();
-        if (!trimmed.startsWith("[")) return List.of(json);
-        String inner = trimmed.substring(1, trimmed.length() - 1);
-        if (inner.isBlank()) return List.of();
-        List<String> result = new ArrayList<>();
-        for (String part : inner.split(",")) {
-            String cleaned = part.trim().replaceAll("^\"|\"$", "");
-            if (!cleaned.isBlank()) {
-                result.add(cleaned);
-            }
-        }
-        return result;
     }
 }
