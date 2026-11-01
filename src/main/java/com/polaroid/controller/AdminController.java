@@ -175,6 +175,17 @@ public class AdminController {
                 .location(java.net.URI.create(fileService.paymentProofRedirect(orderNumber, authentication.getName())))
                 .build();
     }
+
+    /**
+     * Same link as JSON. The dashboard authenticates with a bearer token, so an &lt;img&gt; tag
+     * cannot follow the redirect above; it fetches the URL and renders it instead.
+     */
+    @GetMapping("/orders/{orderNumber}/payment-proof-url")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> paymentProofUrl(@PathVariable String orderNumber, Authentication authentication) {
+        return ResponseEntity.ok(Map.of("success", true,
+                "url", fileService.paymentProofRedirect(orderNumber, authentication.getName())));
+    }
     
     @GetMapping("/users")
     @PreAuthorize("hasRole('ADMIN')")

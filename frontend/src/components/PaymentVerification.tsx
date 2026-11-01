@@ -15,6 +15,8 @@ export default function PaymentVerification({ order, isAdmin, onUpdated, onStart
   order: Order; isAdmin: boolean; onUpdated: (order: Order) => void; onStartProcessing: () => void; updating: boolean;
 }) {
   const [review, setReview] = useState<Review | null>(null);
+  const [proofLink, setProofLink] = useState('');
+  const retriedLink = useRef(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const saving = useRef(false);
@@ -30,6 +32,13 @@ export default function PaymentVerification({ order, isAdmin, onUpdated, onStart
   const active = order.status === 'PENDING' || (order.status as string) === 'DRAFT';
   const unpaid = order.paymentStatus !== 'PAID' && (order.paymentStatus as string) !== 'REFUNDED';
   const canReview = isAdmin && active && unpaid;
+  const receiptUrl = proofLink || review?.proofUrl || '';
+  const loadProofLink = async () => {
+    try {
+      const { data } = await orderAPI.paymentProofLink(order.orderNumber);
+      if (data?.url) setProofLink(data.url);
+    } catch { /* keep the review payload's URL rather than showing nothing */ }
+  };
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -40,6 +49,12 @@ export default function PaymentVerification({ order, isAdmin, onUpdated, onStart
   }, [order.id, order.updatedAt, order.paymentProofUrl, isAdmin]);
 
   useEffect(() => {
+    if (!isAdmin || !review?.proofKey) return;
+    retriedLink.current = false;
+    void loadProofLink();
+  }, [isAdmin, review?.proofKey, order.orderNumber, order.updatedAt]);
+
+  useEffect(() => {
     if (action && !dialog.current?.open) dialog.current?.showModal();
     if (!action && dialog.current?.open) dialog.current.close();
   }, [action]);
@@ -48,6 +63,7 @@ export default function PaymentVerification({ order, isAdmin, onUpdated, onStart
     const [orderResponse, reviewResponse] = await Promise.all([orderAPI.getById(order.id), orderAPI.paymentReview(order.id)]);
     onUpdated(orderResponse.data);
     setReview(reviewResponse.data);
+    await loadProofLink();
   };
   const upload = async () => {
     if (!file || saving.current) return;
@@ -89,8 +105,10 @@ export default function PaymentVerification({ order, isAdmin, onUpdated, onStart
     {order.paymentProofSource && <p className="text-text-muted">Proof source: {order.paymentProofSource === 'WHATSAPP' ? 'WhatsApp' : 'System upload'}</p>}
     {order.paymentReference && <p className="text-text-muted break-words">Reference: {order.paymentReference}</p>}
     {order.paymentVerifiedAt && <p className="text-text-muted">Verified by {order.paymentVerifiedBy} on {new Date(order.paymentVerifiedAt).toLocaleString()}{order.paymentAmountReceived != null && ` · RM ${order.paymentAmountReceived.toFixed(2)} received`}</p>}
-    {isAdmin && review?.proofUrl && <a href={review.proofUrl} target="_blank" rel="noreferrer" className="block w-fit">
-      <img src={review.proofUrl} alt="Customer payment receipt" className="max-h-56 max-w-full border border-border object-contain" />
+    {isAdmin && receiptUrl && <a href={receiptUrl} target="_blank" rel="noreferrer" className="block w-fit">
+      <img src={receiptUrl} alt="Customer payment receipt"
+        onError={() => { if (retriedLink.current) return; retriedLink.current = true; void loadProofLink(); }}
+        className="max-h-56 max-w-full border border-border object-contain" />
       <span className="mt-2 block text-xs text-accent underline">Open receipt</span>
     </a>}
     {isAdmin && <button type="button" className={button} disabled={busy || updating} onClick={() => { setError(''); refresh().catch(e => setError(errorMessage(e))); }}>Refresh proof</button>}

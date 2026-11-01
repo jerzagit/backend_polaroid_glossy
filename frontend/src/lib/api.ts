@@ -55,6 +55,9 @@ export const orderAPI = {
   verifyPayment: (orderNumber: string, data: { action: string; proofKey: string; amountReceived?: number; reference?: string; notes?: string; reason?: string; fundsConfirmed?: boolean }) =>
     api.post(`/admin/orders/${orderNumber}/verify-payment`, data),
   paymentReview: (id: string) => api.get(`/files/payment-proof/${id}`),
+  // Re-signs the receipt on demand: the URL inside the review payload expires after five minutes,
+  // which blanks the image for a seller who leaves the dashboard open.
+  paymentProofLink: (orderNumber: string) => api.get(`/admin/orders/${orderNumber}/payment-proof-url`),
   uploadPaymentProof: (id: string, file: File, reference: string) => {
     const data = new FormData();
     data.append('file', file);
