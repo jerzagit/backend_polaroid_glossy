@@ -45,3 +45,7 @@ node_modules/
 
 # Local Netlify folder
 .netlify
+
+# Local API-token files for the mail/DNS setup (never commit)
+.cf-token*
+.resend-token*

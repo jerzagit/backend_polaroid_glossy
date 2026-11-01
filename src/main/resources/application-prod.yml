@@ -58,6 +58,14 @@ jwt:
 app:
   public-api-url: ${PUBLIC_API_URL:https://polaroid-glossy-backend.fly.dev}
   frontend-url: ${FRONTEND_URL:https://polaroidglossy.my}
+  email:
+    from: ${MAIL_FROM:no-reply@polaroidglossy.my}
+  support:
+    email: ${SUPPORT_EMAIL:admin@polaroidglossy.my}
+    whatsapp: ${SUPPORT_WHATSAPP:+60126620463}
+  notify:
+    orders: ${ORDER_NOTIFY_EMAILS:}
+
   storage:
     provider: ${STORAGE_PROVIDER:r2}
     r2:
