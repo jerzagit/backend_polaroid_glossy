@@ -91,6 +91,13 @@ export default function OrdersPage() {
   };
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
+    if (!selectedOrder || selectedOrder.id !== orderId || updating || selectedOrder.status === newStatus) return;
+
+    const formatStatus = (status: string) => status.replace(/_/g, ' ').toLowerCase();
+    if (!window.confirm(
+      `Change order ${selectedOrder.orderNumber} from ${formatStatus(selectedOrder.status)} to ${formatStatus(newStatus)}?\n\nSelect OK to confirm or Cancel to keep the current status.`
+    )) return;
+
     setUpdating(true);
     try {
       await orderAPI.updateStatus(orderId, newStatus);
