@@ -52,6 +52,16 @@ export const orderAPI = {
   getMyOrders: () => api.get('/orders/my'),
   updateStatus: (id: string, status: string, message?: string) =>
     api.patch(`/admin/orders/${id}/status`, { status, message }),
+  verifyPayment: (orderNumber: string, data: { action: string; proofKey: string; amountReceived?: number; reference?: string; notes?: string; reason?: string; fundsConfirmed?: boolean }) =>
+    api.post(`/admin/orders/${orderNumber}/verify-payment`, data),
+  paymentReview: (id: string) => api.get(`/files/payment-proof/${id}`),
+  uploadPaymentProof: (id: string, file: File, reference: string) => {
+    const data = new FormData();
+    data.append('file', file);
+    data.append('orderId', id);
+    data.append('reference', reference);
+    return api.post('/files/payment-proof', data, { headers: { 'Content-Type': undefined } });
+  },
   updateTracking: (id: string, trackingNumber: string) =>
     api.patch(`/admin/orders/${id}/tracking`, { trackingNumber }),
   addNotes: (id: string, notes: string) =>

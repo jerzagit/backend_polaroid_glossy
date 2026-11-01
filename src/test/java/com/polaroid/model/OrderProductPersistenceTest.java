@@ -28,6 +28,12 @@ class OrderProductPersistenceTest {
                     statement.execute("ALTER TABLE order_items DROP COLUMN product_id");
                     statement.execute(Files.readString(Path.of(
                             "src/main/resources/db/migration/V31__Add_order_item_product_id.sql")));
+                    for (String column : java.util.List.of("payment_proof_source", "payment_review_status", "payment_verified_by",
+                            "payment_verified_at", "payment_amount_received", "payment_review_history")) {
+                        statement.execute("ALTER TABLE orders DROP COLUMN " + column);
+                    }
+                    statement.execute(Files.readString(Path.of(
+                            "src/main/resources/db/migration/V32__Manual_payment_verification.sql")));
                 } catch (java.io.IOException e) {
                     throw new IllegalStateException(e);
                 }
@@ -35,6 +41,12 @@ class OrderProductPersistenceTest {
             var order = Order.builder().orderNumber("PRODUCT-TEST")
                     .customerName("Test Customer").customerEmail("test@example.com")
                     .total(new BigDecimal("12.00")).build();
+            order.setPaymentProofSource("WHATSAPP");
+            order.setPaymentReviewStatus("APPROVED");
+            order.setPaymentVerifiedBy("admin@example.com");
+            order.setPaymentVerifiedAt(java.time.LocalDateTime.of(2026, 11, 1, 12, 0));
+            order.setPaymentAmountReceived(new BigDecimal("12.00"));
+            com.polaroid.service.PaymentReviews.append(order, new ObjectMapper(), "APPROVED", "admin@example.com", "Bank checked");
             var item = OrderItem.builder().order(order).productId(1L)
                     .sizeId("ic").sizeName("IC (5.5 x 8.9 cm)")
                     .variantId("10").variantLabel("Full").style("FULL")
@@ -52,6 +64,10 @@ class OrderProductPersistenceTest {
 
             var saved = session.get(Order.class, order.getId());
             var response = new OrderMapper(new ObjectMapper(), null).toDto(saved);
+            assertEquals("WHATSAPP", response.getPaymentProofSource());
+            assertEquals("admin@example.com", response.getPaymentVerifiedBy());
+            assertEquals(new BigDecimal("12.00"), response.getPaymentAmountReceived());
+            assertEquals("Bank checked", com.polaroid.service.PaymentReviews.read(saved, new ObjectMapper()).get(0).get("notes"));
             var selected = response.getItems().stream().filter(i -> i.getPackageId() != null).findFirst().orElseThrow();
             assertEquals(1L, selected.getProductId());
             assertEquals("IC (5.5 x 8.9 cm)", selected.getSizeName());

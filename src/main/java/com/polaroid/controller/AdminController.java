@@ -125,6 +125,7 @@ public class AdminController {
             @PathVariable UUID id,
             @Valid @RequestBody ReopenOrderRequest request,
             Authentication authentication) {
+        if (request.isPaymentReceived()) throw new com.polaroid.exception.BadRequestException("Reopen first, then use payment verification to confirm funds received");
         return ResponseEntity.ok(orderService.reopenOrder(
                 id, request.getReason(), request.isPaymentReceived(), authentication.getName()));
     }
@@ -146,15 +147,18 @@ public class AdminController {
     }
 
     @PatchMapping("/orders/{id}/payment-status")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<OrderResponse> updatePaymentStatus(
             @PathVariable UUID id,
             @Valid @RequestBody UpdatePaymentStatusRequest request) {
+        if (request.getPaymentStatus() == com.polaroid.model.enums.PaymentStatus.PAID) {
+            throw new com.polaroid.exception.BadRequestException("Use payment verification with receipt and confirmation to mark an order paid");
+        }
         return ResponseEntity.ok(orderService.updatePaymentStatusForAdmin(id, request.getPaymentStatus()));
     }
 
     @PostMapping("/orders/{orderNumber}/verify-payment")
-    @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING')")
+    @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<OrderResponse> verifyPayment(
             @PathVariable String orderNumber,
             @Valid @RequestBody VerifyPaymentRequest request,

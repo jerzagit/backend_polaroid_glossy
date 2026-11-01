@@ -26,7 +26,7 @@ public final class Fulfillment {
         if (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.DRAFT) return;
         if (order.getPaymentStatus() == PaymentStatus.PAID) {
             order.setExpiresAt(null);
-            order.setStatus(ready(order, mapper) ? OrderStatus.PROCESSING : OrderStatus.PENDING);
+            order.setStatus(OrderStatus.PENDING);
         }
     }
 }

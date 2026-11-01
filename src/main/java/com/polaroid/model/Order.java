@@ -100,6 +100,19 @@ public class Order extends Auditable {
     @Column(name = "payment_reference")
     private String paymentReference;
 
+    @Column(name = "payment_proof_source")
+    private String paymentProofSource;
+    @Column(name = "payment_review_status")
+    private String paymentReviewStatus;
+    @Column(name = "payment_verified_by")
+    private String paymentVerifiedBy;
+    @Column(name = "payment_verified_at")
+    private LocalDateTime paymentVerifiedAt;
+    @Column(name = "payment_amount_received", precision = 10, scale = 2)
+    private BigDecimal paymentAmountReceived;
+    @Column(name = "payment_review_history", columnDefinition = "TEXT")
+    private String paymentReviewHistory;
+
     @Column(name = "toyyibpay_ref")
     private String toyyibpayRef;
     
