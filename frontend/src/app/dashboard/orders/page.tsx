@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { isAxiosError } from 'axios';
 import { useAuth } from '@/context/AuthContext';
 import { orderAPI, fileAPI } from '@/lib/api';
 import { Order, OrderStatus, PaginatedResponse, UploadedFile } from '@/types';
@@ -32,6 +33,16 @@ export default function OrdersPage() {
   const [appliedFilters, setAppliedFilters] = useState<DashboardFilters>(() => createDefaultDashboardFilters());
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [pendingStatus, setPendingStatus] = useState<{ orderId: string; orderNumber: string; current: string; next: string } | null>(null);
+  const [statusError, setStatusError] = useState('');
+  const statusDialog = useRef<HTMLDialogElement>(null);
+  const statusSaving = useRef(false);
+
+  useEffect(() => {
+    const dialog = statusDialog.current;
+    if (pendingStatus && !dialog?.open) dialog?.showModal();
+    if (!pendingStatus && dialog?.open) dialog.close();
+  }, [pendingStatus]);
   const [activeTab, setActiveTab] = useState<'details' | 'images'>('details');
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [filesLoading, setFilesLoading] = useState(false);
@@ -92,23 +103,25 @@ export default function OrdersPage() {
 
   const handleStatusUpdate = async (orderId: string, newStatus: string) => {
     if (!selectedOrder || selectedOrder.id !== orderId || updating || selectedOrder.status === newStatus) return;
+    setStatusError('');
+    setPendingStatus({ orderId, orderNumber: selectedOrder.orderNumber, current: selectedOrder.status, next: newStatus });
+  };
 
-    const formatStatus = (status: string) => status.replace(/_/g, ' ').toLowerCase();
-    if (!window.confirm(
-      `Change order ${selectedOrder.orderNumber} from ${formatStatus(selectedOrder.status)} to ${formatStatus(newStatus)}?\n\nSelect OK to confirm or Cancel to keep the current status.`
-    )) return;
-
+  const confirmStatusUpdate = async () => {
+    if (!pendingStatus || statusSaving.current) return;
+    statusSaving.current = true;
     setUpdating(true);
+    setStatusError('');
     try {
-      await orderAPI.updateStatus(orderId, newStatus);
+      const response = await orderAPI.updateStatus(pendingStatus.orderId, pendingStatus.next);
+      setSelectedOrder(response.data);
+      setPendingStatus(null);
       fetchOrders();
-      if (selectedOrder) {
-        const response = await orderAPI.getById(orderId);
-        setSelectedOrder(response.data);
-      }
     } catch (error) {
-      console.error('Failed to update status', error);
+      const message = isAxiosError(error) ? error.response?.data?.message : null;
+      setStatusError(typeof message === 'string' ? message : 'Could not update the order status. Please try again.');
     } finally {
+      statusSaving.current = false;
       setUpdating(false);
     }
   };
@@ -528,6 +541,41 @@ export default function OrdersPage() {
           )}
         </div>
       </div>
+      <dialog
+        ref={statusDialog}
+        aria-labelledby="status-dialog-title"
+        aria-describedby="status-dialog-description"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!statusSaving.current) setPendingStatus(null);
+        }}
+        className="w-[calc(100%-2rem)] max-w-md border border-border p-0 text-text-primary backdrop:bg-black/70 backdrop:backdrop-blur-sm"
+        style={{ borderRadius: 0, background: 'var(--color-surface)' }}
+      >
+        <div className="border-b border-border px-6 py-4">
+          <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">Order {pendingStatus?.orderNumber}</p>
+          <h2 id="status-dialog-title" className="mt-2 font-display text-xl">Confirm status change</h2>
+        </div>
+        <div className="p-6 space-y-5" aria-busy={updating}>
+          <p id="status-dialog-description" className="font-mono text-sm text-text-muted">Update this order to the status below?</p>
+          <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 border border-border p-4 font-mono text-xs">
+            <div><p className="mb-2 text-text-muted">Current</p><p>{pendingStatus?.current.replace(/_/g, ' ')}</p></div>
+            <span aria-hidden="true" className="text-text-muted">→</span>
+            <div><p className="mb-2 text-text-muted">New status</p><p className="text-accent">{pendingStatus?.next.replace(/_/g, ' ')}</p></div>
+          </div>
+          {statusError && <p role="alert" className="font-mono text-sm text-danger">{statusError}</p>}
+          <div className="flex flex-wrap justify-end gap-3">
+            <button type="button" autoFocus disabled={updating} onClick={() => setPendingStatus(null)}
+              className="border border-border px-4 py-3 font-mono text-xs uppercase tracking-[0.1em] text-text-muted hover:text-text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
+              Cancel
+            </button>
+            <button type="button" disabled={updating} onClick={confirmStatusUpdate}
+              className="border border-accent bg-accent px-4 py-3 font-mono text-xs uppercase tracking-[0.1em] text-black hover:opacity-90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent disabled:opacity-50">
+              {updating ? 'Saving...' : 'Confirm change'}
+            </button>
+          </div>
+        </div>
+      </dialog>
     </div>
   );
 }
