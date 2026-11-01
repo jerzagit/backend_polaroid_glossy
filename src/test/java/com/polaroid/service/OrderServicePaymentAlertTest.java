@@ -43,7 +43,10 @@ class OrderServicePaymentAlertTest {
                                  OrderStatusHistoryRepository history,
                                  EmailService mail,
                                  OrderMapper mapper) {
-        OrderService service = new OrderService(repository, null, history, null, null, mapper, mail,
+        var users = mock(com.polaroid.repository.UserRepository.class);
+        when(users.findByEmail("admin@polaroidglossy.my")).thenReturn(Optional.of(com.polaroid.model.User.builder()
+                .role(com.polaroid.model.enums.Role.ADMIN).build()));
+        OrderService service = new OrderService(repository, null, history, null, users, mapper, mail,
                 new ObjectMapper(), null);
         setField(service, "uploadTokenExpirationHours", 168);
         return service;
@@ -108,6 +111,13 @@ class OrderServicePaymentAlertTest {
 
         VerifyPaymentRequest request = new VerifyPaymentRequest();
         request.setAction("APPROVE");
+        request.setFundsConfirmed(true);
+        request.setAmountReceived(new java.math.BigDecimal("17.00"));
+        request.setReference("BANK-123");
+        request.setProofKey("payment-proofs/receipt.jpg");
+        order.setTotal(request.getAmountReceived());
+        order.setPaymentProofUrl(request.getProofKey());
+        when(repository.lockByOrderNumber(ORDER_NUMBER)).thenReturn(Optional.of(order));
 
         OrderService service = service(repository, history, mail, mock(OrderMapper.class));
         service.verifyPayment(ORDER_NUMBER, request, "admin@polaroidglossy.my");

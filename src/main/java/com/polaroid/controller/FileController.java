@@ -74,6 +74,12 @@ public class FileController {
         }
         return request.getRemoteAddr();
     }
+
+    @GetMapping("/payment-proof/{orderId}")
+    @PreAuthorize("hasRole('ADMIN')")
+    public ResponseEntity<Map<String, Object>> paymentReviewDetails(@PathVariable String orderId, Authentication authentication) {
+        return ResponseEntity.ok(fileService.paymentReviewDetails(orderId, authentication.getName()));
+    }
     
     @DeleteMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'MARKETING', 'PACKER')")

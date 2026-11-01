@@ -36,6 +36,12 @@ public class OrderResponse {
     private String uploadMode;
     private String paymentProofUrl;
     private String paymentReference;
+    private String paymentProofSource;
+    private String paymentReviewStatus;
+    private String paymentVerifiedBy;
+    private LocalDateTime paymentVerifiedAt;
+    private BigDecimal paymentAmountReceived;
+    private boolean photosComplete;
     private String toyyibpayRef;
     private BigDecimal subtotal;
     private BigDecimal shipping;

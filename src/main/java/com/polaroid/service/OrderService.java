@@ -287,7 +287,7 @@ public class OrderService {
         order.setStatus(newStatus);
         
         switch (newStatus) {
-            case PROCESSING -> order.setStatus(OrderStatus.PROCESSING);
+            case PROCESSING -> addStatusHistory(order, OrderStatus.PROCESSING, message != null ? message : "Processing started by " + userEmail);
             case POSTED -> {
                 order.setShippedAt(LocalDateTime.now());
                 addStatusHistory(order, OrderStatus.POSTED, message != null ? message : "Order posted");
@@ -419,29 +419,53 @@ public class OrderService {
 
     @Transactional
     public OrderResponse verifyPayment(String orderNumber, VerifyPaymentRequest request, String adminEmail) {
-        Order order = orderRepository.findByOrderNumber(orderNumber)
+        User admin = userRepository.findByEmail(adminEmail).orElseThrow(() -> new ForbiddenException("Admin access required"));
+        if (admin.getRole() != Role.ADMIN) throw new ForbiddenException("Only admins can verify payments");
+        Order order = orderRepository.lockByOrderNumber(orderNumber)
                 .orElseThrow(() -> new ResourceNotFoundException("Order not found: " + orderNumber));
-
-        orderRepository.lockById(order.getId()).orElseThrow();
-        String action = request.getAction().toUpperCase();
+        String action = request.getAction() == null ? "" : request.getAction().toUpperCase(java.util.Locale.ROOT);
+        if (order.getPaymentStatus() == PaymentStatus.PAID) {
+            if ("APPROVE".equals(action)) return orderMapper.toDto(order);
+            throw new BadRequestException("Verified payments cannot be rejected");
+        }
+        if (order.getPaymentStatus() == PaymentStatus.REFUNDED
+                || (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.DRAFT)) {
+            throw new BadRequestException("Reopen the order before verifying payment");
+        }
+        if (order.getPaymentProofUrl() == null || !order.getPaymentProofUrl().equals(request.getProofKey())) {
+            throw new BadRequestException("Payment proof changed or is missing. Refresh and review the latest receipt.");
+        }
+        if ("REJECTED".equals(order.getPaymentReviewStatus())) throw new BadRequestException("Upload replacement proof before reviewing again");
 
         switch (action) {
             case "APPROVE" -> {
-                boolean approvedFromUnpaid = order.getPaymentStatus() != PaymentStatus.PAID;
+                if (!request.isFundsConfirmed()) throw new BadRequestException("Confirm that funds were received before approving");
+                if (request.getAmountReceived() == null || request.getAmountReceived().compareTo(order.getTotal()) != 0) {
+                    throw new BadRequestException("Amount received must match the full order total including delivery");
+                }
+                if (request.getReference() == null || request.getReference().isBlank() || request.getReference().length() > 200) {
+                    throw new BadRequestException("A transaction reference of up to 200 characters is required");
+                }
+                if (request.getNotes() != null && request.getNotes().length() > 1000) throw new BadRequestException("Notes must be 1000 characters or fewer");
                 order.setPaymentStatus(PaymentStatus.PAID);
+                order.setPaymentReviewStatus("APPROVED");
+                order.setPaymentReference(request.getReference().trim());
+                order.setPaymentAmountReceived(request.getAmountReceived());
+                order.setPaymentVerifiedBy(adminEmail);
+                order.setPaymentVerifiedAt(LocalDateTime.now());
                 Fulfillment.reconcile(order, objectMapper);
                 order.setPaidAt(LocalDateTime.now());
                 pauseRetentionForPaidCancellation(order);
+                PaymentReviews.append(order, objectMapper, "APPROVED", adminEmail, request.getNotes());
                 addStatusHistory(order, order.getStatus(), "Payment verified and approved by " + adminEmail);
-                if (approvedFromUnpaid) {
-                    emailService.sendPaymentConfirmation(order);
-                    emailService.sendNewOrderAlert(order);
-                }
+                emailService.sendPaymentConfirmation(order);
+                emailService.sendNewOrderAlert(order);
             }
             case "REJECT" -> {
-                order.setPaymentProofUrl(null);
-                order.setPaymentReference(null);
-                String reason = request.getReason() != null ? request.getReason() : "Payment proof rejected";
+                String reason = request.getReason();
+                if (reason == null || reason.isBlank() || reason.length() > 1000) throw new BadRequestException("A rejection reason of up to 1000 characters is required");
+                order.setPaymentReviewStatus("REJECTED");
+                PaymentReviews.append(order, objectMapper, "REJECTED", adminEmail, reason);
                 addStatusHistory(order, order.getStatus(), "Payment rejected: " + reason + " (by " + adminEmail + ")");
             }
             default -> throw new BadRequestException("Invalid action: " + action + ". Use APPROVE or REJECT.");

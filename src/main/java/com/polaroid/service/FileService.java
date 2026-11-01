@@ -163,9 +163,15 @@ public class FileService {
 
     @Transactional
     public Map<String, Object> uploadPaymentProof(MultipartFile file, String orderId, String reference, String userEmail) throws IOException {
-        Order order = findAuthorizedOrder(orderId, userEmail);
-        orderRepository.lockById(order.getId()).orElseThrow();
-        if (!"bank_transfer".equals(order.getPaymentMethod()) || order.getPaymentStatus() == PaymentStatus.PAID
+        Order order;
+        try { order = orderRepository.lockById(UUID.fromString(orderId)).orElseThrow(() -> new ResourceNotFoundException("Order not found")); }
+        catch (IllegalArgumentException e) { order = orderRepository.lockByOrderNumber(orderId).orElseThrow(() -> new ResourceNotFoundException("Order not found")); }
+        User uploader = userRepository.findByEmail(userEmail).orElseThrow(() -> new ForbiddenException("User not found"));
+        boolean admin = uploader.getRole() == Role.ADMIN;
+        boolean owner = uploader.getId().equals(order.getUserId()) || userEmail.equalsIgnoreCase(order.getCustomerEmail());
+        if (!admin && (!owner || isStaff(uploader.getRole()))) throw new ForbiddenException("Only the customer or an admin can submit payment proof");
+        if ((!admin && !"bank_transfer".equals(order.getPaymentMethod())) || order.getPaymentStatus() == PaymentStatus.PAID
+                || order.getPaymentStatus() == PaymentStatus.REFUNDED
                 || (order.getStatus() != OrderStatus.PENDING && order.getStatus() != OrderStatus.DRAFT)) {
             throw new BadRequestException("Order is not awaiting bank transfer proof");
         }
@@ -173,10 +179,32 @@ public class FileService {
         boolean jpeg = "jpeg".equals(detectImageFormat(bytes));
         String key = "payment-proofs/" + order.getOrderNumber() + "/" + UUID.randomUUID() + (jpeg ? ".jpg" : ".png");
         storageService.upload(key, bytes, jpeg ? "image/jpeg" : "image/png");
+        if (order.getPaymentProofUrl() != null && PaymentReviews.read(order, objectMapper).isEmpty()) {
+            PaymentReviews.append(order, objectMapper, "PREVIOUS_PROOF", userEmail, "Receipt retained before replacement");
+        }
         order.setPaymentProofUrl(key);
+        order.setPaymentProofSource(admin ? "WHATSAPP" : "SYSTEM_UPLOAD");
+        order.setPaymentReviewStatus("AWAITING_VERIFICATION");
         order.setPaymentReference(reference == null ? null : reference.substring(0, Math.min(reference.length(), 200)));
+        PaymentReviews.append(order, objectMapper, "SUBMITTED", userEmail, null);
         orderRepository.save(order);
         return Map.of("success", true, "url", storageService.getSignedUrl(key, IMAGE_URL_EXPIRATION_SECONDS));
+    }
+
+    @Transactional(readOnly = true)
+    public Map<String, Object> paymentReviewDetails(String orderId, String userEmail) {
+        User user = userRepository.findByEmail(userEmail).orElseThrow(() -> new ForbiddenException("User not found"));
+        if (user.getRole() != Role.ADMIN) throw new ForbiddenException("Only admins can review payment evidence");
+        Order order = findOrder(orderId);
+        var history = PaymentReviews.read(order, objectMapper);
+        for (var event : history) {
+            if (event.get("proofKey") != null) event.put("proofUrl", storageService.getSignedUrl(event.get("proofKey"), IMAGE_URL_EXPIRATION_SECONDS));
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("proofKey", order.getPaymentProofUrl());
+        result.put("proofUrl", order.getPaymentProofUrl() == null ? null : storageService.getSignedUrl(order.getPaymentProofUrl(), IMAGE_URL_EXPIRATION_SECONDS));
+        result.put("history", history);
+        return result;
     }
 
     private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId) throws IOException {
@@ -390,6 +418,8 @@ public class FileService {
     }
 
     public void deleteFile(String key) throws IOException {
+        if (key != null && key.startsWith("payment-proofs/"))
+            throw new BadRequestException("Payment receipts are retained as verification evidence and cannot be deleted here");
         if (key != null && key.startsWith("orders/") && key.contains("/assets/"))
             throw new UploadConflictException("Finalized strip source assets cannot be deleted through the legacy file endpoint");
         try {

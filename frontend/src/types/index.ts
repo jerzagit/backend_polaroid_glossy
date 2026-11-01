@@ -56,6 +56,14 @@ export interface Order {
   status: OrderStatus;
   paymentStatus: PaymentStatus;
   paymentMethod?: string;
+  paymentProofUrl?: string;
+  paymentReference?: string;
+  paymentProofSource?: string;
+  paymentReviewStatus?: string;
+  paymentVerifiedBy?: string;
+  paymentVerifiedAt?: string;
+  paymentAmountReceived?: number;
+  photosComplete?: boolean;
   toyyibpayRef?: string;
   subtotal: number;
   shipping: number;

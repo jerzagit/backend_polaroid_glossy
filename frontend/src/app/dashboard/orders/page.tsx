@@ -6,6 +6,7 @@ import { useAuth } from '@/context/AuthContext';
 import { orderAPI, fileAPI } from '@/lib/api';
 import { Order, OrderStatus, PaginatedResponse, UploadedFile } from '@/types';
 import DashboardFilterBar from '@/components/DashboardFilterBar';
+import PaymentVerification from '@/components/PaymentVerification';
 import { DashboardFilters, buildFilterParams, createDefaultDashboardFilters } from '@/lib/dashboardFilters';
 
 const statusColors: Record<OrderStatus, string> = {
@@ -394,6 +395,9 @@ export default function OrdersPage() {
                       <p className="font-mono text-xs text-text-muted uppercase tracking-[0.1em]">{selectedOrder.paymentStatus}</p>
                     </div>
                   </div>
+                  <PaymentVerification key={selectedOrder.id} order={selectedOrder} isAdmin={user?.role === 'ADMIN'} updating={updating}
+                    onUpdated={(order) => { setSelectedOrder(order); setOrders(current => current.map(row => row.id === order.id ? order : row)); }}
+                    onStartProcessing={() => handleStatusUpdate(selectedOrder.id, 'PROCESSING')} />
                   <div className="border-t border-border pt-5">
                     <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Delivery Address</p>
                     <div className="font-mono text-sm text-text-primary space-y-1">

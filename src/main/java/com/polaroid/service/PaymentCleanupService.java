@@ -92,7 +92,8 @@ public class PaymentCleanupService {
     static boolean awaitingPayment(Order order) {
         return order.getPaymentStatus() == PaymentStatus.PENDING
                 && (order.getStatus() == OrderStatus.PENDING || order.getStatus() == OrderStatus.DRAFT)
-                && (order.getPaymentProofUrl() == null || order.getPaymentProofUrl().isBlank());
+                && (order.getPaymentProofUrl() == null || order.getPaymentProofUrl().isBlank()
+                    || "REJECTED".equals(order.getPaymentReviewStatus()));
     }
 
     private LocalDateTime effectiveCreatedAt(Order order) {
