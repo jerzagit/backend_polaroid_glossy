@@ -35,6 +35,12 @@ public class GlobalExceptionHandler {
                 .body(Map.of("success", false, "message", "Upload is too large. Reduce the file size and try again."));
     }
 
+    @ExceptionHandler(org.springframework.web.bind.MissingServletRequestParameterException.class)
+    public ResponseEntity<Map<String, Object>> handleMissingParameter(org.springframework.web.bind.MissingServletRequestParameterException ex) {
+        return ResponseEntity.badRequest()
+                .body(Map.of("success", false, "message", "Missing required parameter: " + ex.getParameterName(), "error", "Missing required parameter: " + ex.getParameterName()));
+    }
+
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<Map<String, Object>> handleBadCredentials(BadCredentialsException ex) {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED)
