@@ -14,6 +14,7 @@ import java.util.List;
 @AllArgsConstructor
 public class OrderItemResponse {
     private String id;
+    private Long productId;
     private String sizeId;
     private String sizeName;
     private String variantId;

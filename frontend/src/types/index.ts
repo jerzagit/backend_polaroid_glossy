@@ -19,6 +19,14 @@ export type PaymentStatus = 'PENDING' | 'PAID' | 'FAILED';
 
 export interface OrderItem {
   id: string;
+  productId?: number | null;
+  variantId?: string | null;
+  variantLabel?: string | null;
+  style?: string | null;
+  packageId?: string | null;
+  packageQuantity?: number | null;
+  packagePrice?: number | null;
+  packageCount?: number | null;
   orderId: string;
   sizeId: string;
   sizeName: string;

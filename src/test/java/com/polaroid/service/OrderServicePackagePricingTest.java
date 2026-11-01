@@ -59,6 +59,7 @@ class OrderServicePackagePricingTest {
         assertEquals(new BigDecimal("6.00"), item.getTotalPrice());
         assertEquals(10, item.getQuantity());
         assertEquals("ic", item.getSizeId());
+        assertEquals(1L, item.getProductId());
         assertEquals("10", item.getVariantId());
         assertEquals("Full", item.getVariantLabel());
         assertEquals("FULL", item.getStyle());
@@ -95,6 +96,18 @@ class OrderServicePackagePricingTest {
         Throwable thrown = assertThrows(java.lang.reflect.InvocationTargetException.class,
                 () -> buildItem(request));
         assertEquals(com.polaroid.exception.BadRequestException.class, thrown.getCause().getClass());
+    }
+
+    @Test
+    void productSelectionCannotSilentlyFallBackToLegacySize() {
+        OrderRequest.OrderItemRequest request = new OrderRequest.OrderItemRequest();
+        request.setProductId(1L);
+        request.setSizeId("ic");
+        request.setQuantity(10);
+        Throwable thrown = assertThrows(java.lang.reflect.InvocationTargetException.class,
+                () -> buildItem(request));
+        assertEquals(com.polaroid.exception.BadRequestException.class, thrown.getCause().getClass());
+        assertEquals("packageId is required for a catalog product selection", thrown.getCause().getMessage());
     }
 
     private OrderItem buildItem(Long productId, Long variantId, Long packageId, Integer packages) throws Exception {

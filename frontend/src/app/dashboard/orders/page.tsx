@@ -320,6 +320,32 @@ export default function OrdersPage() {
 
               {activeTab === 'details' && (
                 <div className="p-5 md:p-6 space-y-6">
+                  <section aria-label="Ordered products" className="space-y-3">
+                    <h3 className="font-mono text-xs text-text-muted uppercase tracking-[0.15em]">Ordered Products</h3>
+                    {selectedOrder.items?.length ? selectedOrder.items.map((item) => (
+                      <div key={item.id} className="border border-border p-4 space-y-2">
+                        <div className="flex flex-wrap justify-between gap-2">
+                          <p className="font-mono text-sm text-text-primary break-words">{item.sizeName || item.sizeId || 'Product name unavailable'}</p>
+                          <p className="font-mono text-sm text-text-primary">RM {item.totalPrice.toFixed(2)}</p>
+                        </div>
+                        {(item.variantLabel || item.style) && (
+                          <p className="font-mono text-xs text-text-muted">Style: {item.variantLabel || item.style}</p>
+                        )}
+                        {item.packageId && item.packageQuantity != null && (
+                          <p className="font-mono text-xs text-text-muted">
+                            Package: {item.packageQuantity} prints × {item.packageCount ?? 1} package(s)
+                            {item.packagePrice != null && ` · RM ${item.packagePrice.toFixed(2)} per package`}
+                          </p>
+                        )}
+                        <p className="font-mono text-xs text-text-muted">Total prints: {item.quantity}</p>
+                        {!item.packageId && (
+                          <p className="font-mono text-xs text-text-muted">RM {item.unitPrice.toFixed(2)} per print</p>
+                        )}
+                      </div>
+                    )) : (
+                      <p className="font-mono text-sm text-text-muted">No product details recorded for this order.</p>
+                    )}
+                  </section>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
                     <div>
                       <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Customer</p>
@@ -331,7 +357,20 @@ export default function OrdersPage() {
                     </div>
                     <div>
                       <p className="font-mono text-xs text-text-muted uppercase tracking-[0.15em] mb-1.5">Payment</p>
-                      <p className="font-mono text-sm text-text-primary">RM {selectedOrder.total.toFixed(2)}</p>
+                      <dl className="font-mono text-sm space-y-2 mb-2">
+                        <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-text-muted">
+                          <dt>Product subtotal</dt>
+                          <dd>RM {selectedOrder.subtotal.toFixed(2)}</dd>
+                        </div>
+                        <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 text-text-muted">
+                          <dt>Delivery charges</dt>
+                          <dd>RM {selectedOrder.shipping.toFixed(2)}</dd>
+                        </div>
+                        <div className="flex flex-wrap justify-between gap-x-4 gap-y-1 border-t border-border pt-2 text-text-primary">
+                          <dt>Total</dt>
+                          <dd>RM {selectedOrder.total.toFixed(2)}</dd>
+                        </div>
+                      </dl>
                       <p className="font-mono text-xs text-text-muted uppercase tracking-[0.1em]">{selectedOrder.paymentStatus}</p>
                     </div>
                   </div>
