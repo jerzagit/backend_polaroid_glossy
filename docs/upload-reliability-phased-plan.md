@@ -149,8 +149,8 @@ These are confirmed code weaknesses, not proof of the cause of every reported sh
 
 ## Progress
 
-- [x] Phase 1: current upload failures — implemented; see results below
-- [x] Phase 2: automatic recovery — implemented; see results below
+- [x] Phase 1: current upload failures — implemented and verified in production
+- [x] Phase 2: automatic recovery — implemented; the browser queue itself is still unexercised
 - [ ] Phase 3: customer experience
 - [ ] Phase 4: large-order architecture
 - [ ] Phase 5: capacity testing and rollout
@@ -181,7 +181,7 @@ Tests: 7 new backend cases (status counts for photos and strips, replay at capac
 - Photos uploaded before stable identities existed cannot be named individually; `uploadedPhotoIds` omits them and clients must trust `complete` for those orders. Re-selecting a subset of a partly uploaded batch can still mint a new identity for an already-saved photo, which the capacity refusal prevents from duplicating but Phase 2's persisted queue removes entirely.
 - The attempt budget lives in an in-memory per-instance map: it resets on deploy and is not shared between Fly machines. Move it to a shared store during Phase 4.
 - Deploy the backend before the customer frontend: the proxy no longer verifies order state on its own.
-- Refresh still loses files because cart persistence strips `File` objects. That is Phase 2.
+- Refresh still lost files because cart persistence strips `File` objects. Phase 2 addresses this where the customer returns on the same device.
 
 ### Phase 2 results (2026-11-01)
 
@@ -198,6 +198,37 @@ Frontend only (`polaroid_glossy_backup`). The Phase 1 status endpoint already re
 - Recovery is per browser profile. Another device, a cleared profile or evicted storage cannot resume, and the UI asks for those files again.
 - Guest recovery beyond the 168-hour upload-token lifetime needs a new token, and only an admin reopen issues one. Signed-in customers are unaffected because their account authorizes the status call, but the order page is sign-in only, so a guest who loses the tab still cannot reach the automatic resume path.
 - Queue writes race the upload on very large orders and are awaited before clearing so no orphaned records remain. Persisting local copies is pointless for a 1,000-photo order; skip or stream them in Phase 4.
+
+### Production verification (2026-11-01)
+
+Deployed: backend Fly release v108, storefront built by Netlify CI from `main` (merge `3fa0d5a`, PR #80) after the backend. Exercised against production with one real guest order (`PG49343473EF14`, 5R pack of five prints, bank transfer, unpaid) using the same proxy and backend endpoints the browser calls.
+
+| Check | Observed |
+|---|---|
+| Guest order creation | status `DRAFT`, payment `PENDING`, upload token issued |
+| Three uploads | counts advanced 1/5 → 3/5, each response echoed its `photoId` |
+| Status after three | `uploadedImageCount 3`, `remainingImageCount 2`, identities exactly the three sent |
+| Replay of a saved photo identity | `200`, `alreadyUploaded: true`, count unchanged |
+| Replay with different bytes, same identity | `200`, `alreadyUploaded: true`, no replacement, count unchanged |
+| Resume of the two missing photos | reached 5/5, `complete: true` |
+| Extra photo at capacity | `409` carrying `uploadedImageCount`/`expectedImageCount`, not a 500 |
+| Replay of a saved photo at capacity | `200`, `alreadyUploaded: true` |
+| Final order | five images stored, still `DRAFT` + `PENDING`, so readiness never implied payment |
+
+#### Root cause found: guest checkouts could not upload at all
+
+Guest orders are created as `DRAFT` (`OrderService.initialStatus`), while the pre-phase guard accepted uploads only on `PENDING` or `PROCESSING`. A customer who was not signed in therefore had **every** photo rejected with `409 Order is not open for uploads`, leaving the order empty until it expired. Signed-in customers were unaffected because their orders start as `PENDING`.
+
+This is a fuller explanation of the reported missing photos than the 30-per-10-minutes proxy cap, and the draft allowance in Phase 1 removes it. It is still worth checking the affected orders: if they were guest orders, this was the cause; if signed-in, the cap and the absent retries were.
+
+#### Observed but not reproduced
+
+One upload in six returned an empty, non-JSON response while the server did store the photo. The following replays all returned `200` with a full body in about two seconds, so it was a transient transport failure rather than a service fault. It is the failure mode the client already survives, because completion is reconciled against status instead of the HTTP reply, and it is why Phase 3 should display per-photo retry state.
+
+#### Not covered by this run
+
+- The `429` path needs thousands of attempts inside one window and was not exercised.
+- The browser queue was not exercised end to end. Resuming after a genuine mid-upload refresh needs a phone or a browser with file access, so only the pure resume planner and the storage layer carry test coverage.
 
 ## Browser constraints reference
 
