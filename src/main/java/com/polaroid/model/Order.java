@@ -108,6 +108,8 @@ public class Order extends Auditable {
     private String paymentVerifiedBy;
     @Column(name = "payment_verified_at")
     private LocalDateTime paymentVerifiedAt;
+    @Column(name = "payment_verified_reference", length = 200)
+    private String paymentVerifiedReference;
     @Column(name = "payment_amount_received", precision = 10, scale = 2)
     private BigDecimal paymentAmountReceived;
     @Column(name = "payment_review_history", columnDefinition = "TEXT")

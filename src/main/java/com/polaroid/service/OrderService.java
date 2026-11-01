@@ -456,7 +456,9 @@ public class OrderService {
                 if (request.getNotes() != null && request.getNotes().length() > 1000) throw new BadRequestException("Notes must be 1000 characters or fewer");
                 order.setPaymentStatus(PaymentStatus.PAID);
                 order.setPaymentReviewStatus("APPROVED");
-                order.setPaymentReference(request.getReference().trim());
+                // Keep the customer's receipt reference intact; the admin's bank transaction
+                // reference is recorded separately so approval cannot erase it.
+                order.setPaymentVerifiedReference(request.getReference().trim());
                 order.setPaymentAmountReceived(request.getAmountReceived());
                 order.setPaymentVerifiedBy(adminEmail);
                 order.setPaymentVerifiedAt(LocalDateTime.now());

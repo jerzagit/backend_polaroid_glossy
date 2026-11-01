@@ -10,6 +10,7 @@ import lombok.NoArgsConstructor;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -40,7 +41,11 @@ public class OrderResponse {
     private String paymentReviewStatus;
     private String paymentVerifiedBy;
     private LocalDateTime paymentVerifiedAt;
+    /** Admin's bank transaction reference. The customer's receipt reference stays in paymentReference. */
+    private String paymentVerifiedReference;
     private BigDecimal paymentAmountReceived;
+    /** Append-only audit of proof submissions, rejections, approvals and replacements. */
+    private List<Map<String, String>> paymentReviewHistory;
     private boolean photosComplete;
     private String toyyibpayRef;
     private BigDecimal subtotal;

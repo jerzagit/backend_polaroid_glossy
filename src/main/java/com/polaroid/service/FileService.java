@@ -132,6 +132,8 @@ public class FileService {
     private static final int MIN_UPLOAD_ATTEMPTS_PER_WINDOW = 60;
     private static final Duration ANONYMOUS_UPLOAD_WINDOW = Duration.ofMinutes(10);
     private static final int IMAGE_URL_EXPIRATION_SECONDS = 300;
+    /** Admin receipt reviews outlive the 5-minute image URLs; those are signed on demand for longer. */
+    private static final int PAYMENT_PROOF_URL_EXPIRATION_SECONDS = 900;
 
     private final Map<String, UploadWindow> anonymousUploadWindows = new ConcurrentHashMap<>();
 
@@ -249,6 +251,20 @@ public class FileService {
         result.put("proofUrl", order.getPaymentProofUrl() == null ? null : storageService.getSignedUrl(order.getPaymentProofUrl(), IMAGE_URL_EXPIRATION_SECONDS));
         result.put("history", history);
         return result;
+    }
+
+    /**
+     * A dashboard left open outlives the 5-minute image URLs, so the seller's receipt is served
+     * through a redirect that signs a fresh, longer-lived URL on demand.
+     */
+    @Transactional(readOnly = true)
+    public String paymentProofRedirect(String orderId, String adminEmail) {
+        User admin = userRepository.findByEmail(adminEmail).orElseThrow(() -> new ForbiddenException("Admin access required"));
+        if (admin.getRole() != Role.ADMIN) throw new ForbiddenException("Only admins can view payment proofs");
+        Order order = findOrder(orderId);
+        if (order.getPaymentProofUrl() == null || order.getPaymentProofUrl().isBlank())
+            throw new ResourceNotFoundException("This order has no payment proof");
+        return storageService.getSignedUrl(order.getPaymentProofUrl(), PAYMENT_PROOF_URL_EXPIRATION_SECONDS);
     }
 
     private Map<String, Object> storeFile(MultipartFile file, Order order, String orderItemId, String photoId) throws IOException {
