@@ -40,12 +40,9 @@ public class FileController {
         if (assetId != null) {
             result = fileService.uploadStripAsset(file, orderId, orderItemId, customerEmail,
                     authentication == null ? null : authentication.getName(), uploadToken, clientIp(request), assetId);
-        } else if (authentication != null && photoId != null) {
-            result = fileService.uploadWithId(file, orderId, orderItemId, customerEmail, authentication.getName(), photoId);
-        } else if (authentication != null) {
-            result = fileService.uploadFile(file, orderId, orderItemId, customerEmail, authentication.getName());
         } else {
-            result = fileService.uploadFileForOrder(file, orderId, orderItemId, customerEmail, uploadToken, clientIp(request));
+            result = fileService.uploadPhoto(file, orderId, orderItemId, customerEmail,
+                    authentication == null ? null : authentication.getName(), uploadToken, clientIp(request), photoId);
         }
 
         Map<String, Object> response = new HashMap<>(result);
@@ -61,6 +58,13 @@ public class FileController {
             @RequestParam(value = "reference", required = false) String reference,
             Authentication authentication) throws IOException {
         return ResponseEntity.ok(fileService.uploadPaymentProof(file, orderId, reference, authentication.getName()));
+    }
+
+    @GetMapping("/upload-status")
+    public ResponseEntity<Map<String, Object>> uploadStatus(@RequestParam String orderId, @RequestParam String customerEmail,
+            @RequestHeader(value = "X-Upload-Token", required = false) String uploadToken, Authentication authentication) {
+        return ResponseEntity.ok(fileService.uploadStatus(orderId, customerEmail,
+                authentication == null ? null : authentication.getName(), uploadToken));
     }
 
     private String clientIp(HttpServletRequest request) {

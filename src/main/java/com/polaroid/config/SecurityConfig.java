@@ -51,6 +51,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/webhooks/**").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/toyyibpay/create-bill").permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/files/upload").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/files/upload-status").permitAll()
                 .requestMatchers("/api/auth/google").permitAll()
                 .requestMatchers("/api/auth/profile").authenticated()
                 .requestMatchers("/api/addresses/**").authenticated()

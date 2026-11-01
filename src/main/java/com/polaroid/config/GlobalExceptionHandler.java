@@ -23,6 +23,11 @@ import java.util.stream.Collectors;
 @RestControllerAdvice
 @Slf4j
 public class GlobalExceptionHandler {
+    @ExceptionHandler(com.polaroid.exception.UploadRateLimitException.class)
+    public ResponseEntity<Map<String, Object>> handleUploadRateLimit(com.polaroid.exception.UploadRateLimitException ex) {
+        return ResponseEntity.status(429).header("Retry-After", String.valueOf(ex.getRetryAfter()))
+                .body(Map.of("success", false, "error", ex.getMessage(), "retryAfter", ex.getRetryAfter()));
+    }
 
     @ExceptionHandler(org.springframework.web.multipart.MaxUploadSizeExceededException.class)
     public ResponseEntity<Map<String, Object>> handleUploadTooLarge(org.springframework.web.multipart.MaxUploadSizeExceededException ex) {
